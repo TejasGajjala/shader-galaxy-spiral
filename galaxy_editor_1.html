@@ -702,14 +702,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   const DEFAULTS = {
     armCount: 2, armWinding: 16.0, armSpacing: 1.12,
     hazeAmount: 0.80, bulgeAmount: 0.70, diskThickness: 0.5, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
-    compactness: 1.5, starDensity: 2.0, maxStarLod: 2.0, zoomFloor: 0.0, twinkleFraction: 0.99, twinkleSpeed: 3.0,
+    compactness: 1.5, starDensity: 2.0, maxStarLod: 2.0, twinkleFraction: 0.99, twinkleSpeed: 3.0,
     coreMode: 0, blackHoleSize: 0.064, centerSpread: 0.5,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
     star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','bulgeAmount','diskThickness','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','zoomFloor','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
+  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','bulgeAmount','diskThickness','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -729,7 +729,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'compactness',     label: 'Compactness',        min: 0.5,  max: 3.0,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'starDensity',     label: 'Star density',       min: 0,    max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'maxStarLod',      label: 'Max star refill',    min: 0,    max: 6,    step: 0.1,   fmt: v => v.toFixed(1) },
-    { key: 'zoomFloor',       label: 'Dive zoom floor',    min: 0,    max: 0.25, step: 0.005, fmt: v => v.toFixed(3) },
     { key: 'twinkleFraction', label: 'Twinkle amount',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'twinkleSpeed',    label: 'Twinkle speed',      min: 0,    max: 8,    step: 0.05,  fmt: v => v.toFixed(2) },
     { key: 'blackHoleSize',   label: 'Black hole size',    min: 0.01, max: 0.2,  step: 0.001, fmt: v => v.toFixed(3) },
@@ -757,7 +756,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     uHaze: 'hazeAmount', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
     uOvalness: 'ovalness', uCamTilt: 'camTilt',
     uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
-    uZoomFloor: 'zoomFloor', uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
+    uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
     uBlackHoleSize: 'blackHoleSize', uCenterSpread: 'centerSpread'
   };
   const VEC_UNIFORM_TO_KEY = {
@@ -888,7 +887,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uCompactness     = ' + state.compactness.toFixed(2) + ';',
       'uStarDensity     = ' + state.starDensity.toFixed(2) + ';',
       'uMaxStarLod      = ' + state.maxStarLod.toFixed(1) + ';',
-      'uZoomFloor       = ' + state.zoomFloor.toFixed(3) + ';',
       'uTwinkleFraction = ' + state.twinkleFraction.toFixed(2) + ';',
       'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
       'uCoreMode        = ' + (state.coreMode > 0.5 ? '1.0' : '0.0') + ';',
@@ -912,8 +910,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uHaze, state.hazeAmount);
     gl.uniform1f(U.uBulge, state.bulgeAmount);
     gl.uniform1f(U.uDiskThickness, state.diskThickness);
-    // (zoomFloor is host-side dive choreography, not a shader uniform --
-    // Flutter drives uZoom itself, so the floor lives in the driver code.)
     gl.uniform1f(U.uOvalness, state.ovalness);
     gl.uniform1f(U.uCamTilt, state.camTilt);
     gl.uniform1f(U.uRotSpeed, state.rotSpeed);
@@ -933,6 +929,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform3fv(U.uNormalHazeColor, state.normalHaze);
     gl.uniform3fv(U.uNormalStarColor, state.normalStar);
     gl.uniform1f(U.uCenterSpread, state.centerSpread);
+    // While the dive is paused the render loop skips drawing, so slider
+    // edits would silently apply to the NEXT drawn frame only. Flag a
+    // one-off repaint so tweaking values against a frozen mid-dive frame
+    // (the best way to A/B e.g. disk thickness) updates instantly.
+    pausedDirty = true;
     // Don't clobber the textarea while the user is actively editing it.
     if (document.activeElement !== glslOut) glslOut.value = glslText();
   }
@@ -987,6 +988,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Declared before buildControls() -- the color pickers read it to decide
   // which mode's palette they bind to.
   let colorTransition = 0.0;
+  // Set by sync(); consumed by the paused branch of frame() to repaint the
+  // frozen frame once after any control change.
+  let pausedDirty = false;
 
   buildControls(); sync();
 
@@ -1081,6 +1085,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
   function frame() {
     if (isPaused) {
+      // Frozen frame: no clocks advance, but if a control changed (sync
+      // set pausedDirty) redraw once with the updated uniforms -- all the
+      // per-frame uniforms (iTime, uZoom, ...) still hold their values
+      // from the moment of pausing, so only the edit shows.
+      if (pausedDirty) {
+        pausedDirty = false;
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
       requestAnimationFrame(frame);
       return;
     }
@@ -1095,16 +1107,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       if (elapsed < duration) {
         shaderTime += delta * 5.0;
         const progress = elapsed / duration;
-        // Dive depth: zoomFloor 0 = legacy bottomless dive (~10,000x);
-        // ~0.1 = the reference video's ~10-15x depth, so the dive
-        // decelerates into a composed final frame (hole ~30% of screen,
-        // big well-spaced stars) instead of accelerating into the fade.
-        const floorZ = Math.max(0.0001, state.zoomFloor);
-        currentZoom = Math.max(floorZ, 1.0 - progress);
+        currentZoom = Math.max(0.0001, 1.0 - progress);
         currentFade = 1.0;
       } else if (elapsed < duration + 700) {
         shaderTime += delta;
-        currentZoom = Math.max(0.0001, state.zoomFloor);
+        currentZoom = 0.0001;
         currentFade = 1.0;
       } else if (elapsed < duration + 700 + 1500) {
         shaderTime += delta;

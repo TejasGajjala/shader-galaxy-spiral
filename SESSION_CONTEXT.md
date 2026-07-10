@@ -71,18 +71,24 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     during the dive = real parallax.
     Cost ≈ +9–10 % frame when on (SwiftShader measurement, overstates GPU);
     coherent uniform gates → zero cost at 0.
-13. **Dive zoom floor** — `uZoomFloor` slider (default 0 = legacy bottomless
-    ~10,000× dive, i.e. current look preserved). Host-side choreography, NOT a
-    shader uniform (Flutter drives uZoom itself): dive clamps at
-    `max(0.0001, floor)`. ~0.1 auditions the reference's ~10–15× composed ending;
-    also doubles as a test harness (pins mid-dive zoom for exact comparisons).
+13. **Dive zoom floor — tried and REMOVED.** Clamping `currentZoom` at a floor
+    just holds the zoom flat for the rest of the 5.5 s dive before the fade — it
+    reads as "the animation pauses before it ends," not as the reference's
+    composed ending (user call). A real reference-style ending needs the dive
+    *choreography* re-timed (shorter duration / ease-out into the floor), not a
+    clamp. Sliders were confirmed live during the dive.
+14. **Paused-frame repaint** — while the dive is paused the render loop skips
+    drawing, so control edits used to apply only after resume. `sync()` now
+    flags `pausedDirty` and the paused branch of `frame()` redraws once (no
+    clocks advance). This makes pause the A/B tool: pause mid-dive, drag Disk
+    thickness 0 ↔ 1, and the frozen frame updates instantly.
 
 ## Current defaults (also the Reset state)
 
 ```
 uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 0.70
 uDiskThickness 0.50 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
-uStarDensity 2.00 · uMaxStarLod 2.0 · uZoomFloor 0.000 · uTwinkleFraction 0.99 · uTwinkleSpeed 3.00
+uStarDensity 2.00 · uMaxStarLod 2.0 · uTwinkleFraction 0.99 · uTwinkleSpeed 3.00
 uCoreMode 0 · uBlackHoleSize 0.064 · uCenterSpread 0.50
 boom:   center (0.294,0.376,0.569) · arm (0,0.482,1) · haze (0.259,0.345,1) · star (1,1,1)
 normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1,1,1)
@@ -95,9 +101,9 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 - **Late-dive star size tuning** (reference stars reach ~2 % screen width).
 - **Haze thinning during deep zoom** (avoid flat gray wash mid-dive).
 - **Ease-in curve** on dive start (smoothstep; less critical if zoom gets floored).
-- Zoom floor as *default* is parked: user is satisfied with the current bottomless
-  dive; the `uZoomFloor` slider (item 13) exists for auditioning the reference-style
-  ending whenever.
+- Zoom floor is parked entirely (slider removed — see item 13): a bare clamp just
+  stalls the animation before the fade. If the reference's ~10–15× composed ending
+  is ever wanted, re-time the dive choreography (ease-out into the floor) instead.
 - From the 3D brainstorm: star height/parallax scatter **done** (item 12); optional
   two-layer smoke depth (moderate) still open. Full volumetric raymarch ruled out
   (mobile load). Possible cheap extra depth cue if wanted later: dim far-side stars
