@@ -1070,7 +1070,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uDiskThickness, state.diskThickness);
     gl.uniform1f(U.uFlare, state.starFlare);
     gl.uniform1f(U.uOvalness, state.ovalness);
-    gl.uniform1f(U.uCamTilt, state.camTilt);
+    gl.uniform1f(U.uCamTilt, currentTilt);
     gl.uniform1f(U.uRotSpeed, state.rotSpeed);
     gl.uniform1f(U.uCompactness, state.compactness);
     gl.uniform1f(U.uStarDensity, state.starDensity);
@@ -1150,6 +1150,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Set by sync(); consumed by the paused branch of frame() to repaint the
   // frozen frame once after any control change.
   let pausedDirty = false;
+  // Effective camera tilt actually uploaded to the shader: equals the
+  // slider at rest, and descends toward top-down during the dive (see the
+  // tilt block in frame()). sync() uploads this too, so a paused mid-dive
+  // repaint keeps the dive's tilt instead of snapping back. Declared
+  // before the first sync() call below.
+  let currentTilt = DEFAULTS.camTilt;
 
   buildControls(); sync();
 
@@ -1328,6 +1334,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       shaderTime += delta;
     }
 
+    // Dive tilt: as the camera closes in, descend toward top-down so the
+    // zoom reads as diving INTO the galaxy and aligning with its axis,
+    // not just magnifying the same oblique picture. Driven by zoom
+    // progress (not time), so it holds consistent through pulse, pause
+    // and hold: unchanged for the first ~10% of the dive, easing to the
+    // floor by ~75%. The floor stays at 40% of the slider tilt (~29 deg):
+    // fully top-down forfeits the oblique stretch that keeps distant
+    // stars in frame, so the hole would swallow the view early and eat
+    // the flare/bokeh finale. At rest (zoom 1) this IS the slider value;
+    // the fade phase resets zoom to 1 behind black, snapping the tilt
+    // home invisibly (same trick as the core-mode swap).
+    const dp = Math.min(1.0, Math.max(0.0, (1.0 - currentZoom - 0.10) / 0.65));
+    currentTilt = state.camTilt * (1.0 - 0.60 * dp * dp * (3.0 - 2.0 * dp));
+    gl.uniform1f(U.uCamTilt, currentTilt);
+
     gl.uniform1f(U.iTime, shaderTime);
     gl.uniform1f(U.uTwinkleTime, twinkleTime);
     gl.uniform1f(U.uHazePulse, hazePulse);
@@ -1337,7 +1358,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // for the old uniform squash factor) rather than an exact per-pixel fit.
     const pxSize = 4.0 * currentZoom * Math.max(
       1.0 / gl.canvas.width,
-      1.0 / (gl.canvas.height * Math.cos(state.camTilt))
+      1.0 / (gl.canvas.height * Math.cos(currentTilt))
     );
     gl.uniform1f(U.uPxSize, pxSize);
     gl.uniform1f(U.uColorTransition, colorTransition);

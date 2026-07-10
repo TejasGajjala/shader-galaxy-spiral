@@ -190,3 +190,14 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 - Testing dives: browser-tool latency exceeds the 7.7 s cycle — schedule clicks
   inside the page (`preview_eval` + `setTimeout` on `#boom-btn` / `#pause-btn`) and
   screenshot while paused.
+21. **Dive camera tilt descent** — during the dive the effective tilt eases
+    from the slider value toward top-down (`currentTilt` in frame(), driven
+    by ZOOM progress not time: unchanged first ~10 %, smoothstep to the
+    floor by ~75 %). Floor = 40 % of slider tilt (~29°): full top-down
+    forfeits the oblique stretch that keeps distant stars in frame, so the
+    hole swallowed the view early and ate the flare finale (tried 12 % —
+    late dive went black). Uploaded per frame; sync() uploads currentTilt
+    too so paused repaints keep the dive tilt; fade phase resets behind
+    black. Side effect: the finale reads as a symmetric star tunnel around
+    the void. (Init-order gotcha: currentTilt must be declared before the
+    first sync() call — TDZ killed the whole page once.)
