@@ -25,8 +25,8 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 
 1. **Black hole as a hole** — no rim glow in black-hole mode; wide soft edge
    (edgeIn 0.45 / edgeOut 1.60); haze & stars feather into the void.
-2. **Dive duration 5.5 s** + 700 ms hold + 1.5 s fade-in of new state (hold/fade are
-   for testing the state switch, intentionally kept).
+2. **Dive duration 5.0 s** (was 5.5) + 700 ms hold + 1.5 s fade-in of new state
+   (hold/fade are for testing the state switch, intentionally kept).
 3. **Pause/Resume button** during dive (shifts zoom clock by paused duration).
 4. **Instant Normal/Boom buttons** — abort any in-progress dive and snap to end state.
 5. **Star size variance** — per-star `sizeMul = mix(0.5, 1.8, hs²)` (skewed small).
@@ -140,9 +140,9 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     quadratic ease-out were both tried and reverted. Instead the dive opens
     with item 20's haze pulse, then zooms linearly (5.5 s as always).
 20. **"Come alive" haze pulse on dive start** — `uHazePulse` uniform (host
-    choreography, no slider; 1.0 = neutral). On Boom: 1.2 s beat BEFORE the
-    zoom — nebula dims to 0.50 (smoothstep, bottom ~0.54 s), swells to 1.25
-    by 1.2 s, overshoot bleeds to 1.0 over the dive's first 0.8 s. Stars
+    choreography, no slider; 1.0 = neutral). On Boom: 1.0 s beat BEFORE the
+    zoom — nebula dims to 0.50 (smoothstep, bottom ~0.45 s), swells to 1.25
+    by 1.0 s, overshoot bleeds to 1.0 over the dive's first 0.8 s. Stars
     deliberately untouched (steady stars against breathing haze sells it).
     Measured from the reference video: its mean luminance dips ~0.4–0.8 s
     in, recovers by ~1.2 s, then the dive brightens. Multiplies `hazeAmt`

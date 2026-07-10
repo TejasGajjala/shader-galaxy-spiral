@@ -1276,8 +1276,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       // and the overshoot bleeds off in the first dive moments. Stars
       // are deliberately untouched -- they hold steady while the haze
       // breathes, which is what sells it.
-      const PULSE = 1200;
-      const duration = 5500;
+      const PULSE = 1000;
+      const duration = 5000;
       const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
       if (elapsed < PULSE) {
         shaderTime += delta;
