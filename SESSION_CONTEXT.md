@@ -112,7 +112,13 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     approaching the horizon band (spike-stacking streaks). Thin spikes
     0.22·R; bloom deliberately tight (σ² = 2·R², weight 0.25 — wider reads
     as fog); twinkle shimmers the whole flared star. Floater size caps also
-    use pxCtl.x now.
+    use pxCtl.x now. Per-star gate (user: lag + too many): only hs > 0.9
+    (top ~10 % by size) of the main field flares, hs > 0.5 of floaters —
+    non-flaring stars keep the plain disc and its exact old cost.
+    Perf note: profiling showed the EARLY dive frames are the heaviest
+    (full haze × 2 smokeMaps + LOD cross-fade doubling all 8 sheet passes)
+    — the dive was already heavy before flares. Biggest untapped mobile
+    lever: drop canvas DPR during the dive (motion hides it).
 17. **Haze extinction in the deep dive** — `hazeVis = smoothstep(0.04, 0.30,
     uZoom)` multiplying smoke/b/corona. Non-linear per user: haze untouched
     until ~⅓ zoom, then dies fast as the hole fills the view; ends black

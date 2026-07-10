@@ -347,9 +347,12 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
             vec2 d = p - starPos - hOff;
             float dist = length(d);
 
-            // Flares only wake in the dive's final stretch; otherwise the
-            // influence region is exactly the plain disc (and its cost).
-            bool flaring = uFlare > 0.001 && uZoom < 0.22;
+            // Flares only wake in the dive's final stretch, and only on
+            // the TOP ~10% of stars by size (hs > 0.9 -- the big bright
+            // ones, like the reference). Everything else keeps the plain
+            // disc and its exact old cost: the per-star gate is what
+            // keeps the flare window from tanking the frame rate.
+            bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.9;
             float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
             if (dist < reach) {
                 float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
@@ -453,8 +456,9 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang, vec
 
             // Same flare kit as the main field: final-stretch only,
             // screen-capped spike length, sub-cell reach. Floaters are
-            // the biggest stars, so they carry the hero crosses.
-            bool flaring = uFlare > 0.001 && uZoom < 0.22;
+            // the biggest stars, so they carry the hero crosses -- but
+            // only about half of them, to keep the finale sparse.
+            bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.5;
             float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
             if (dist < reach) {
                 float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
