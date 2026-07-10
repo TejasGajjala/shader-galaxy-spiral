@@ -101,13 +101,18 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     - Perceptual note: off-plane offsets project mostly ALONG the disk, so
       stills only read via stars escaping the silhouette — that took count
       (dense floater grid), not height.
-16. **Star diffraction flares + bloom** — `uFlare` (default 0.60). 4-point
-    screen-aligned crosses (delta un-rotated out of the spinning frame,
-    y foreshortened by cos(tilt)) + gaussian bloom on the FLOATER stars
-    (the chunky late-dive carriers; needs uDiskThickness > 0). Thin spikes
-    (0.22·R), reach 9·R capped sub-cell so the 3×3 lookup never clips.
-    Intensity ramps with dive depth (smoothstep 0.5→0.12 zoom; ~30 % at
-    rest) and star size; twinkle applies to the whole flared star.
+16. **Star diffraction flares + bloom** — `uFlare` (default 0.60), rebuilt
+    after v1 read "unrealistically huge" (user): **final-stretch only** —
+    `flareRamp = smoothstep(0.22, 0.07, uZoom)`, hard-gated `uZoom < 0.22`,
+    so rest and mid-dive stars are plain dots at zero cost. ALL stars flare
+    at the end: the main field gets small cell-capped crosses (the swarm),
+    floaters carry the hero crosses. Spike half-length ≤ ~52 *screen* px via
+    `pxCtl.x` = per-pixel worst-axis plane footprint (global uPxSize let
+    near-side flares/floaters balloon into blobs); `pxCtl.y` fades flares
+    approaching the horizon band (spike-stacking streaks). Thin spikes
+    0.22·R; bloom deliberately tight (σ² = 2·R², weight 0.25 — wider reads
+    as fog); twinkle shimmers the whole flared star. Floater size caps also
+    use pxCtl.x now.
 17. **Haze extinction in the deep dive** — `hazeVis = smoothstep(0.04, 0.30,
     uZoom)` multiplying smoke/b/corona. Non-linear per user: haze untouched
     until ~⅓ zoom, then dies fast as the hole fills the view; ends black
@@ -134,9 +139,9 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 
 - **Late-dive star size tuning** (reference stars reach ~2 % screen width; we
   cap floaters at ~15 px — compare against the reference end frame).
-- Flare polish: near the horizon the constant cos(tilt) foreshortening
-  under-corrects, so spikes stretch into vertical streaks at the top band
-  during deep dives — revisit with a per-pixel factor if it bothers.
+- (Flare streak/blob issues from the first cut are resolved via the
+  per-pixel footprint + horizon fade; spike y-foreshortening inside
+  starFlare still uses constant cos(tilt) — fine in practice.)
 - Zoom floor is parked entirely (slider removed — see item 13): a bare clamp just
   stalls the animation before the fade. If the reference's ~10–15× composed ending
   is ever wanted, re-time the dive choreography (ease-out into the floor) instead.

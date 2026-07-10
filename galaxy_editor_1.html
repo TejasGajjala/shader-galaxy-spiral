@@ -162,10 +162,12 @@ uniform float uDiskThickness;   // 0 = flat disk (exactly the old look).
                                 // scatter (fuzzy slab rim), plus a sparse
                                 // coarse lattice of real floaters that
                                 // slide with parallax during the dive.
-uniform float uFlare;           // 4-point diffraction spikes + soft bloom
-                                // on the floater stars; subtle at rest and
-                                // ramping up as the dive deepens -- the
-                                // reference's late-dive star signature.
+uniform float uFlare;           // 4-point diffraction spikes + soft bloom.
+                                // Alive ONLY in the dive's final stretch
+                                // (uZoom < 0.22, full by 0.07), on ALL
+                                // stars -- small crosses on the swarm,
+                                // big ones on the floaters. At rest and
+                                // mid-dive every star is a plain dot.
 uniform float uOvalness;        // intrinsic elongation (Sa/Sb); see the
                                 // ovalness frames built in mainImage.
                                 // 1.0 = round (original).
@@ -239,6 +241,40 @@ vec2 rotate(in vec2 p, in float t){
     return p * cos(-t) + vec2(p.y, -p.x) * sin(-t);
 }
 
+// --- Shared flare kit -------------------------------------------------
+// 4-point screen-aligned diffraction cross + soft bloom, per the
+// reference's END-of-dive frames: crosses belong to the close-up swarm,
+// so they only wake in the final stretch of the dive and every star is a
+// clean dot at rest / mid-dive.
+float flareRamp() {
+    return smoothstep(0.22, 0.07, uZoom);
+}
+// Spike half-length: grows with the star and the ramp, but capped in
+// SCREEN pixels (~52 px) via the PER-PIXEL footprint pxCtl.x -- the
+// global uPxSize is a worst-axis constant, and using it here let flares
+// balloon on the expanded near side of the tilted plane. Also capped
+// sub-cell so the 3x3 lattice lookup never clips a spike, and never
+// below the core radius (the disc must fit its own influence region).
+float flareReach(float radius, float cellCap, float pxL) {
+    float len = radius * mix(2.5, 7.0, flareRamp());
+    return max(radius, min(min(len, pxL * 52.0), cellCap));
+}
+// pxCtl.y fades flares out approaching the horizon band, where extreme
+// foreshortening stacks the spikes of many stars into vertical streaks.
+float starFlare(vec2 d, float dist, float radius, float reach, float hs, float ang, float fvis) {
+    vec2 du = rotate(d, -ang);       // screen-aligned, not galaxy-aligned
+    du.y *= cos(uCamTilt);           // approximate tilt foreshortening
+    float thin = radius * 0.22;
+    float sx = exp(-abs(du.y) / thin) * pow(max(0.0, 1.0 - abs(du.x) / reach), 2.0);
+    float sy = exp(-abs(du.x) / thin) * pow(max(0.0, 1.0 - abs(du.y) / reach), 2.0);
+    // Tight halo: at 2R the glow is already down to ~13%. A wider sigma
+    // barely decays inside the reach circle and smears every flared star
+    // into a fog blob -- the spikes, not the bloom, carry the look.
+    float bloom = exp(-(dist * dist) / (radius * radius * 2.0));
+    float amt = uFlare * flareRamp() * fvis * (0.45 + 0.55 * hs);
+    return (0.5 * (sx + sy) + 0.25 * bloom) * amt;
+}
+
 // One star grid at a given LOD scale. lvlScale multiplies the grid so
 // star spacing stays roughly constant on screen as the camera dives;
 // BASE_R shrinks by the same factor so star size tracks spacing.
@@ -250,7 +286,7 @@ vec2 rotate(in vec2 p, in float t){
 // two sheets with (0, 0.5) and (0.5, 1) together contain EXACTLY the
 // original population -- density never changes, stars just get dealt out
 // across heights. The flat path passes (0, 1) = keep everything.
-float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi) {
+float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec2 pxCtl) {
     float GRID = (8.0 + 18.0 * uStarDensity) * lvlScale;
     // BASE_R is the nominal star size; each star scales it by a hashed
     // multiplier below so the field has small/large variety.
@@ -308,21 +344,27 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
                 hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
             }
 
-            float dist = length(p - starPos - hOff);
+            vec2 d = p - starPos - hOff;
+            float dist = length(d);
 
-            if (dist < radius) {
-                float brightness = pow(1.0 - dist / radius, 2.5) * atten;
-
-                float h = hash1(n + vec2(99.1, 23.7));
-                float twinkle = 1.0;
-                // Exactly uTwinkleFraction of stars twinkle, on their own
-                // clock (uTwinkleTime) so rotation speed has no effect.
-                if (h > 1.0 - uTwinkleFraction) {
-                    float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
-                    twinkle = mix(0.05, 3.0, pulse);
+            // Flares only wake in the dive's final stretch; otherwise the
+            // influence region is exactly the plain disc (and its cost).
+            bool flaring = uFlare > 0.001 && uZoom < 0.22;
+            float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
+            if (dist < reach) {
+                float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
+                float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.y) * atten : 0.0;
+                if (core + flare > 0.0) {
+                    float h = hash1(n + vec2(99.1, 23.7));
+                    float twinkle = 1.0;
+                    // Exactly uTwinkleFraction of stars twinkle, on their
+                    // own clock (uTwinkleTime) so rotation has no effect.
+                    if (h > 1.0 - uTwinkleFraction) {
+                        float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
+                        twinkle = mix(0.05, 3.0, pulse);
+                    }
+                    result = max(result, (core + flare) * twinkle);
                 }
-
-                result = max(result, brightness * twinkle);
             }
         }
     }
@@ -337,18 +379,18 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
 // spawns, so the existing stars keep growing/spreading as the dive
 // continues -- this is what actually reads as flying PAST stars, instead
 // of the field statistically refilling itself forever.
-float starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi) {
+float starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec2 pxCtl) {
     float lod = min(max(0.0, log2(1.0 / max(uZoom, 0.0001))), uMaxStarLod);
     float l0 = floor(lod);
     float f = lod - l0;
     float s0 = exp2(l0);
-    float a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi);
+    float a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl);
     // The cross-fade weight f derives purely from uZoom, so this branch is
     // fully coherent; at rest (f = 0) it skips the second lattice level
     // entirely, halving the star pass. mix(a, b, 0) == a, so no visual
     // change where it fires.
     if (f < 0.001) return a;
-    float b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi);
+    float b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl);
     return mix(a, b, f);
 }
 
@@ -361,7 +403,7 @@ float starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi) {
 // That is what lets high uDiskThickness values scatter stars visibly OFF
 // the disk silhouette (the still-frame-readable 3D cue) instead of
 // silently saturating a clamp. Per-star residual heights stay sub-cell.
-float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang) {
+float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang, vec2 pxCtl) {
     vec2 ps = p - parVec * hSheet;   // exact apparent frame of this sheet
     // Presence follows the exponential disk profile of the FOOTPRINT, so
     // floaters cluster over the galaxy even when their apparent position
@@ -400,38 +442,23 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang) {
             // Grow on screen as the dive closes in, but cap at ~15 px so
             // a deep zoom never inflates a floater into a huge blob; the
             // sub-pixel end keeps the same energy-conserving AA as the
-            // main field.
-            float radius = clamp(starBase, uPxSize * 1.2, uPxSize * 15.0);
+            // main field. Caps use the PER-PIXEL footprint (pxCtl.x): the
+            // global uPxSize let near-side floaters balloon into giant
+            // soft discs on the expanded bottom of the tilted plane.
+            float radius = clamp(starBase, pxCtl.x * 1.2, pxCtl.x * 15.0);
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
             vec2 d = ps - starPos - hOff;
             float dist = length(d);
 
-            // Flares extend well past the core disc; the reach is capped
-            // just under one cell so the 3x3 lookup never clips a spike.
-            // With flares off the reach collapses to the disc (old cost).
-            float reach = uFlare > 0.001 ? min(radius * 9.0, 0.9 / GRID) : radius;
+            // Same flare kit as the main field: final-stretch only,
+            // screen-capped spike length, sub-cell reach. Floaters are
+            // the biggest stars, so they carry the hero crosses.
+            bool flaring = uFlare > 0.001 && uZoom < 0.22;
+            float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
             if (dist < reach) {
                 float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
-                float flare = 0.0;
-                if (uFlare > 0.001) {
-                    // 4-point diffraction cross + soft bloom, the
-                    // reference's late-dive star look: thin spikes with a
-                    // quadratic length falloff and a gaussian halo.
-                    // Screen-aligned: un-rotate the delta out of the
-                    // spinning frame, then foreshorten y the way the
-                    // camera tilt does (cos approximation).
-                    vec2 du = rotate(d, -ang);
-                    du.y *= cos(uCamTilt);
-                    float thin = radius * 0.22;
-                    float sx = exp(-abs(du.y) / thin) * pow(max(0.0, 1.0 - abs(du.x) / reach), 2.0);
-                    float sy = exp(-abs(du.x) / thin) * pow(max(0.0, 1.0 - abs(du.y) / reach), 2.0);
-                    float bloom = exp(-(dist * dist) / (radius * radius * 9.0));
-                    // Stronger on bigger stars, subtle at rest, ramping
-                    // up as the dive deepens.
-                    float amt = uFlare * mix(0.3, 1.0, smoothstep(0.5, 0.12, uZoom)) * (0.3 + 0.7 * hs);
-                    flare = (0.5 * (sx + sy) + 0.35 * bloom) * amt * atten;
-                }
+                float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.y) * atten : 0.0;
                 if (core + flare > 0.0) {
                     float h = hash1(n + vec2(99.1, 23.7));
                     float twinkle = 1.0;
@@ -589,6 +616,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // handles the near-horizon blowup. Built from SCREEN coords, so it
     // must be computed before p is overwritten with the plane hit.
     vec2 parVec = vec2(p.x * FOV, st + p.y * FOV * ct) / max(denom, 0.05);
+    // Per-pixel star sizing/flare controls. x = the LOCAL plane footprint
+    // of one screen pixel, worst axis: horizontal is rayT-based, vertical
+    // differentiates the plane-hit y through rayT(sy) -- both follow the
+    // perspective, unlike the global uPxSize, so screen-pixel caps (star
+    // size, flare reach) hold everywhere: without the vertical term the
+    // expanded near side still ballooned floaters into tall soft blobs.
+    // y = flare visibility, fading before the horizon band where
+    // foreshortening stacks many stars' spikes into vertical streaks.
+    float dRayT = camD * ct * FOV * st / (max(denom, 0.05) * max(denom, 0.05));
+    float hFoot = rayT * FOV * 2.0 / iResolution.x;
+    float vFoot = abs(dRayT * (st + p.y * FOV * ct) + rayT * FOV * ct) * 2.0 / iResolution.y;
+    vec2 pxCtl = vec2(max(hFoot, vFoot),
+                      smoothstep(0.10, 0.20, denom));
     p = vec2(rayT * p.x * FOV,
              -camD * st + rayT * (st + p.y * FOV * ct));
 
@@ -654,21 +694,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             // frame. Radially/arm-shaped regions, so the branch stays
             // spatially coherent.
             if (aMask > 0.0005) {
-                starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi) * 1.5);
+                starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi, ang, pxCtl) * 1.5);
             }
             // Bulge sheet: exponential-disk falloff drives PRESENCE at the
             // sheet footprint; 0.8x keeps the arms dominant (as before).
             vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
             float bKeep = min(uBulge * exp(-length(bRot) * 1.85), 1.0);
             if (bKeep > 0.003) {
-                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi) * 1.5 * 0.8);
+                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl) * 1.5 * 0.8);
             }
         }
         // Floater sheets: sparse chunky strays at the largest heights --
         // past ~2 on the slider they visibly detach from the silhouette.
         float H = uDiskThickness * 0.05;
-        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, ang),
-                                 floaterSheet(p, parRot, -H, 2.0, ang)) * 1.5);
+        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, ang, pxCtl),
+                                 floaterSheet(p, parRot, -H, 2.0, ang, pxCtl)) * 1.5);
     } else {
         // Oval arm mask decides WHERE stars live; the round starField
         // decides WHAT they look like -- stars trace the oval arms as
@@ -676,8 +716,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // never double-brightens a shared star.
         float starMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0);
         float bulgeKeep = min(uBulge * exp(-length(p) * 1.85), 1.0);
-        starsV = max(starMask * starField(p, 1.0, parRot, 0.0, 1.0) * 1.5,
-                     starField(p, bulgeKeep, parRot, 0.0, 1.0) * 1.5 * 0.8);
+        starsV = max(starMask * starField(p, 1.0, parRot, 0.0, 1.0, ang, pxCtl) * 1.5,
+                     starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl) * 1.5 * 0.8);
     }
 
     // groundVis gates every galaxy-body term so the region beyond the
