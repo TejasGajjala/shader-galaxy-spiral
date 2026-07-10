@@ -54,7 +54,7 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     At `uCamTilt = 0` reduces exactly to the old flat mapping.
     (First attempt looked ahead instead of at center → off-center smear + dive missing
     the hole → fixed with look-at.)
-12. **Disk thickness (3D stars)** — `uDiskThickness` (default 0.50; **0 = old flat
+12. **Disk thickness (3D stars)** — `uDiskThickness` (default now 0.00, user call; **0 = old flat
     look, verified pixel-identical**). A star at height h appears in the sampled
     z = 0 plane frame shifted by exactly `h · parVec`, `parVec = (d.x, d.y)/-d.z`
     from the camera ray (computed per pixel in mainImage before the plane hit,
@@ -156,7 +156,7 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 
 ```
 uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 0.70
-uDiskThickness 0.50 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
+uDiskThickness 0.00 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
 uStarDensity 2.00 · uMaxStarLod 2.0 · uTwinkleFraction 0.99 · uTwinkleSpeed 3.00
 uCoreMode 0 · uBlackHoleSize 0.064 · uCenterSpread 0.50
 boom:   center (0.294,0.376,0.569) · arm (0,0.482,1) · haze (0.259,0.345,1) · star (1,1,1)
@@ -192,8 +192,9 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
   screenshot while paused.
 21. **Dive camera tilt descent** — during the dive the effective tilt eases
     from the slider value toward top-down (`currentTilt` in frame(), driven
-    by ZOOM progress not time: unchanged first ~10 %, smoothstep to the
-    floor by ~75 %). Floor = 40 % of slider tilt (~29°): full top-down
+    by ZOOM progress not time; easeInExpo (normalized 2^(10(p−1))) so the
+    whole descent lands in the final stretch of the zoom — the earlier
+    smoothstep-by-75 % version read "too literal, too soon" per user). Floor = 40 % of slider tilt (~29°): full top-down
     forfeits the oblique stretch that keeps distant stars in frame, so the
     hole swallowed the view early and ate the flare finale (tried 12 % —
     late dive went black). Uploaded per frame; sync() uploads currentTilt
