@@ -136,6 +136,12 @@ uniform float uHaze;            // nebula/smoke visibility; 0 = hidden
 uniform float uBulge;           // stellar bulge strength; 0 = arms only
                                 // (clean starfield), 1 = full. Stars are
                                 // independent of this.
+uniform float uDiskThickness;   // 0 = flat disk (exactly the old look).
+                                // >0 lifts stars off the plane: the main
+                                // field gets a sub-cell hashed height
+                                // scatter (fuzzy slab rim), plus a sparse
+                                // coarse lattice of real floaters that
+                                // slide with parallax during the dive.
 uniform float uOvalness;        // intrinsic elongation (Sa/Sb); see the
                                 // ovalness frames built in mainImage.
                                 // 1.0 = round (original).
@@ -208,7 +214,7 @@ float hash1(vec2 p) {
 // keep = per-star presence probability (0..1): each star rolls its own
 // hash against it, so lowering keep THINS the population (fewer stars at
 // full brightness) instead of dimming every star. keep = 1.0 keeps all.
-float starFieldLevel(vec2 p, float lvlScale, float seed, float keep) {
+float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec) {
     float GRID = (8.0 + 18.0 * uStarDensity) * lvlScale;
     // BASE_R is the nominal star size; each star scales it by a hashed
     // multiplier below so the field has small/large variety.
@@ -240,7 +246,20 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep) {
             float radius = max(starBase, pxFloor);
             float atten = (starBase / radius) * (starBase / radius);
 
-            float dist = length(p - starPos);
+            // Slab fuzz: each star hovers a hashed hair off the plane, and
+            // parVec turns that height into its exact apparent shift in
+            // this pixel's plane frame. Clamped to stay sub-cell so the
+            // 3x3 lookup never clips a shifted star. Gated on the uniform
+            // (coherent branch): a flat disk skips the math entirely and
+            // renders the old look bit for bit.
+            vec2 hOff = vec2(0.0);
+            if (uDiskThickness > 0.001) {
+                float hh = (hash1(n + vec2(17.9, 61.3)) - 0.5) * 2.0;
+                hOff = parVec * (hh * uDiskThickness * 0.004);
+                hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
+            }
+
+            float dist = length(p - starPos - hOff);
 
             if (dist < radius) {
                 float brightness = pow(1.0 - dist / radius, 2.5) * atten;
@@ -269,14 +288,75 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep) {
 // spawns, so the existing stars keep growing/spreading as the dive
 // continues -- this is what actually reads as flying PAST stars, instead
 // of the field statistically refilling itself forever.
-float starField(vec2 p, float keep) {
+float starField(vec2 p, float keep, vec2 parVec) {
     float lod = min(max(0.0, log2(1.0 / max(uZoom, 0.0001))), uMaxStarLod);
     float l0 = floor(lod);
     float f = lod - l0;
     float s0 = exp2(l0);
-    float a = starFieldLevel(p, s0, l0, keep);
-    float b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep);
+    float a = starFieldLevel(p, s0, l0, keep, parVec);
+    float b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec);
     return mix(a, b, f);
+}
+
+// Sparse off-plane "floater" stars on a coarse fixed lattice (no LOD).
+// Each gets a real signed height -- a few percent of the disk radius --
+// and its exact perspective offset, so during a dive they slide against
+// the in-plane field (parallax) and grow without refilling: the cue that
+// reads as moving THROUGH the disk instead of magnifying a picture. The
+// coarse cells keep even the largest offset sub-cell, so the 3x3 lookup
+// stays valid -- the constraint that forbids big heights on the fine
+// main-field lattice doesn't bite here.
+float floaterField(vec2 p, vec2 parVec, float keep) {
+    float GRID = 2.6;
+    // Chunkier than the lattice stars: floaters must read as individual
+    // trackable objects for the parallax slide to register, not vanish
+    // into the main-field blizzard mid-dive.
+    float BASE_R = 0.010;
+    vec2 cell = floor(p * GRID);
+    float result = 0.0;
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            vec2 n = cell + vec2(float(dx), float(dy)) + vec2(41.0, 17.0);
+
+            if (hash1(n + vec2(13.7, 57.3)) > keep) continue;
+
+            float hx = hash1(n + vec2(1.7, 9.2));
+            float hy = hash1(n + vec2(8.3, 2.6));
+            vec2 starPos = (n - vec2(41.0, 17.0) + vec2(hx, hy)) / GRID;
+
+            // Signed height with magnitude biased away from zero, so
+            // floaters genuinely hover instead of hiding inside the
+            // main field's sub-cell slab fuzz.
+            float sgn = hash1(n + vec2(23.1, 5.9)) > 0.5 ? 1.0 : -1.0;
+            float mag = mix(0.35, 1.0, hash1(n + vec2(3.7, 91.3)));
+            vec2 hOff = parVec * (sgn * mag * uDiskThickness * 0.05);
+            hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
+
+            float hs = hash1(n + vec2(7.31, 41.7));
+            float starBase = BASE_R * mix(0.6, 1.7, hs * hs);
+            // Grow on screen as the dive closes in, but cap at ~15 px so
+            // a deep zoom never inflates a floater into a huge blob; the
+            // sub-pixel end keeps the same energy-conserving AA as the
+            // main field.
+            float radius = clamp(starBase, uPxSize * 1.2, uPxSize * 15.0);
+            float atten = min(1.0, (starBase / radius) * (starBase / radius));
+
+            float dist = length(p - starPos - hOff);
+
+            if (dist < radius) {
+                float brightness = pow(1.0 - dist / radius, 2.5) * atten;
+                float h = hash1(n + vec2(99.1, 23.7));
+                float twinkle = 1.0;
+                if (h > 1.0 - uTwinkleFraction) {
+                    float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
+                    twinkle = mix(0.05, 3.0, pulse);
+                }
+                result = max(result, brightness * twinkle);
+            }
+        }
+    }
+    return result;
 }
 
 float fbmdisk(vec2 p) {
@@ -418,6 +498,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // so the fallback coordinate stays finite (no precision banding).
     float groundVis = smoothstep(0.03, 0.12, denom);
     float rayT = camD * ct / max(denom, 0.05);
+    // Height-parallax basis: a star floating h above the plane appears,
+    // in this pixel's z = 0 plane frame, shifted by exactly h * parVec
+    // (closed form from the same ray -- (d.x, d.y) / -d.z). Divisor
+    // floored like rayT's; the per-star sub-cell clamp in the star loops
+    // handles the near-horizon blowup. Built from SCREEN coords, so it
+    // must be computed before p is overwritten with the plane hit.
+    vec2 parVec = vec2(p.x * FOV, st + p.y * FOV * ct) / max(denom, 0.05);
     p = vec2(rayT * p.x * FOV,
              -camD * st + rayT * (st + p.y * FOV * ct));
 
@@ -438,6 +525,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float ang = -uRotSpeed * iTime; // negative = clockwise spin
     p = rotate(p, ang);
     vec2 pOval = rotate(pO1, ang);
+    // Parallax basis carried into the spinning lattice frame (rotate is
+    // linear, so vectors transform the same way as positions).
+    vec2 parRot = rotate(parVec, ang);
 
     // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
     // independent, so hiding the haze leaves a clean starfield. Gate is on
@@ -454,8 +544,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the arm field, so max() below never double-brightens a shared star;
     // 0.8x brightness keeps the arms the dominant feature.
     float bulgeKeep = min(uBulge * exp(-length(p) * 1.85), 1.0);
-    float bulgeStars = starField(p, bulgeKeep) * 1.5 * 0.8;
-    float starsV = max(starMask * starField(p, 1.0) * 1.5, bulgeStars);
+    float bulgeStars = starField(p, bulgeKeep, parRot) * 1.5 * 0.8;
+    float starsV = max(starMask * starField(p, 1.0, parRot) * 1.5, bulgeStars);
+    // Off-plane floaters: presence follows the same exponential-disk
+    // profile as the bulge population, so they cluster over the galaxy
+    // and thin toward space. Gated on the uniform (fully coherent), so a
+    // flat disk pays nothing for the feature.
+    if (uDiskThickness > 0.001) {
+        float floatKeep = min(0.9 * exp(-length(p) * 1.1), 1.0);
+        starsV = max(starsV, floaterField(p, parRot, floatKeep) * 1.5);
+    }
 
     // groundVis gates every galaxy-body term so the region beyond the
     // horizon (see camDenom above) reads as clean black/background instead
@@ -579,19 +677,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 16.0, armSpacing: 1.12,
-    hazeAmount: 0.80, bulgeAmount: 0.70, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
-    compactness: 1.5, starDensity: 2.0, maxStarLod: 2.0, twinkleFraction: 0.99, twinkleSpeed: 3.0,
+    hazeAmount: 0.80, bulgeAmount: 0.70, diskThickness: 0.5, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
+    compactness: 1.5, starDensity: 2.0, maxStarLod: 2.0, zoomFloor: 0.0, twinkleFraction: 0.99, twinkleSpeed: 3.0,
     coreMode: 0, blackHoleSize: 0.064, centerSpread: 0.5,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
     star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','bulgeAmount','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
+  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','bulgeAmount','diskThickness','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','zoomFloor','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -604,12 +702,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armSpacing',      label: 'Arm spacing',        min: 0.5,  max: 1.8,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'hazeAmount',      label: 'Nebula haze',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'ovalness',        label: 'Ovalness (Sa/Sb)',   min: 1.0,  max: 1.7,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'camTilt',         label: 'Camera tilt',        min: 0.0,  max: 1.45, step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'rotSpeed',        label: 'Rotation speed',     min: 0,    max: 0.1,  step: 0.001, fmt: v => v.toFixed(3) },
     { key: 'compactness',     label: 'Compactness',        min: 0.5,  max: 3.0,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'starDensity',     label: 'Star density',       min: 0,    max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'maxStarLod',      label: 'Max star refill',    min: 0,    max: 6,    step: 0.1,   fmt: v => v.toFixed(1) },
+    { key: 'zoomFloor',       label: 'Dive zoom floor',    min: 0,    max: 0.25, step: 0.005, fmt: v => v.toFixed(3) },
     { key: 'twinkleFraction', label: 'Twinkle amount',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'twinkleSpeed',    label: 'Twinkle speed',      min: 0,    max: 8,    step: 0.05,  fmt: v => v.toFixed(2) },
     { key: 'blackHoleSize',   label: 'Black hole size',    min: 0.01, max: 0.2,  step: 0.001, fmt: v => v.toFixed(3) },
@@ -634,9 +734,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
   const UNIFORM_TO_KEY = {
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing',
-    uHaze: 'hazeAmount', uBulge: 'bulgeAmount', uOvalness: 'ovalness', uCamTilt: 'camTilt',
+    uHaze: 'hazeAmount', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
+    uOvalness: 'ovalness', uCamTilt: 'camTilt',
     uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
-    uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
+    uZoomFloor: 'zoomFloor', uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
     uBlackHoleSize: 'blackHoleSize', uCenterSpread: 'centerSpread'
   };
   const VEC_UNIFORM_TO_KEY = {
@@ -760,12 +861,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uArmSpacing      = ' + state.armSpacing.toFixed(2) + ';',
       'uHaze            = ' + state.hazeAmount.toFixed(2) + ';',
       'uBulge           = ' + state.bulgeAmount.toFixed(2) + ';',
+      'uDiskThickness   = ' + state.diskThickness.toFixed(2) + ';',
       'uOvalness        = ' + state.ovalness.toFixed(2) + ';',
       'uCamTilt         = ' + state.camTilt.toFixed(2) + ';',
       'uRotSpeed        = ' + state.rotSpeed.toFixed(3) + ';',
       'uCompactness     = ' + state.compactness.toFixed(2) + ';',
       'uStarDensity     = ' + state.starDensity.toFixed(2) + ';',
       'uMaxStarLod      = ' + state.maxStarLod.toFixed(1) + ';',
+      'uZoomFloor       = ' + state.zoomFloor.toFixed(3) + ';',
       'uTwinkleFraction = ' + state.twinkleFraction.toFixed(2) + ';',
       'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
       'uCoreMode        = ' + (state.coreMode > 0.5 ? '1.0' : '0.0') + ';',
@@ -788,6 +891,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uArmSpacing, state.armSpacing);
     gl.uniform1f(U.uHaze, state.hazeAmount);
     gl.uniform1f(U.uBulge, state.bulgeAmount);
+    gl.uniform1f(U.uDiskThickness, state.diskThickness);
+    // (zoomFloor is host-side dive choreography, not a shader uniform --
+    // Flutter drives uZoom itself, so the floor lives in the driver code.)
     gl.uniform1f(U.uOvalness, state.ovalness);
     gl.uniform1f(U.uCamTilt, state.camTilt);
     gl.uniform1f(U.uRotSpeed, state.rotSpeed);
@@ -969,11 +1075,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       if (elapsed < duration) {
         shaderTime += delta * 5.0;
         const progress = elapsed / duration;
-        currentZoom = Math.max(0.0001, 1.0 - progress);
+        // Dive depth: zoomFloor 0 = legacy bottomless dive (~10,000x);
+        // ~0.1 = the reference video's ~10-15x depth, so the dive
+        // decelerates into a composed final frame (hole ~30% of screen,
+        // big well-spaced stars) instead of accelerating into the fade.
+        const floorZ = Math.max(0.0001, state.zoomFloor);
+        currentZoom = Math.max(floorZ, 1.0 - progress);
         currentFade = 1.0;
       } else if (elapsed < duration + 700) {
         shaderTime += delta;
-        currentZoom = 0.0001;
+        currentZoom = Math.max(0.0001, state.zoomFloor);
         currentFade = 1.0;
       } else if (elapsed < duration + 700 + 1500) {
         shaderTime += delta;

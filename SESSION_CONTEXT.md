@@ -54,13 +54,35 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     At `uCamTilt = 0` reduces exactly to the old flat mapping.
     (First attempt looked ahead instead of at center → off-center smear + dive missing
     the hole → fixed with look-at.)
+12. **Disk thickness (3D stars)** — `uDiskThickness` (default 0.50; **0 = old flat
+    look, verified pixel-identical**). A star at height h appears in the sampled
+    z = 0 plane frame shifted by exactly `h · parVec`, `parVec = (d.x, d.y)/-d.z`
+    from the camera ray (computed per pixel in mainImage before the plane hit,
+    rotated into the lattice frame). Two populations:
+    (a) *Slab fuzz* — per-star hashed height on the existing arm/bulge lattice,
+    offset clamped sub-cell (`0.45/GRID`) so the 3×3 lookup never clips a shifted
+    star (the trap that forbids big heights on the fine lattice). Fuzzy rim at rest.
+    (b) *Floaters* — new `floaterField()`: sparse COARSE lattice (GRID 2.6, no LOD,
+    BASE_R 0.010, chunkier + full brightness so they're trackable), real signed
+    heights up to ±5 % of disk radius (magnitude biased off zero), same exact
+    offset — big offsets stay sub-cell because cells are big. Presence gated by
+    `exp(-r·1.1)` disk profile; screen size capped ~15 px in deep zoom; twinkle
+    like arm stars; max()-combined into starsV. These slide against the field
+    during the dive = real parallax.
+    Cost ≈ +9–10 % frame when on (SwiftShader measurement, overstates GPU);
+    coherent uniform gates → zero cost at 0.
+13. **Dive zoom floor** — `uZoomFloor` slider (default 0 = legacy bottomless
+    ~10,000× dive, i.e. current look preserved). Host-side choreography, NOT a
+    shader uniform (Flutter drives uZoom itself): dive clamps at
+    `max(0.0001, floor)`. ~0.1 auditions the reference's ~10–15× composed ending;
+    also doubles as a test harness (pins mid-dive zoom for exact comparisons).
 
 ## Current defaults (also the Reset state)
 
 ```
 uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 0.70
-uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
-uStarDensity 2.00 · uMaxStarLod 2.0 · uTwinkleFraction 0.99 · uTwinkleSpeed 3.00
+uDiskThickness 0.50 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
+uStarDensity 2.00 · uMaxStarLod 2.0 · uZoomFloor 0.000 · uTwinkleFraction 0.99 · uTwinkleSpeed 3.00
 uCoreMode 0 · uBlackHoleSize 0.064 · uCenterSpread 0.50
 boom:   center (0.294,0.376,0.569) · arm (0,0.482,1) · haze (0.259,0.345,1) · star (1,1,1)
 normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1,1,1)
@@ -68,15 +90,18 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 
 ## Pending / agreed next steps (not yet implemented)
 
-- **Zoom floor ~0.08–0.12** for the dive (match reference's ~10–15× depth; hole then
-  naturally caps at ~30 % width). Ending choreography (hold/fade) stays as-is.
 - **Star diffraction flares + bloom** on large/bright stars late in the dive — the one
   genuinely new shader feature still missing vs. the reference.
 - **Late-dive star size tuning** (reference stars reach ~2 % screen width).
 - **Haze thinning during deep zoom** (avoid flat gray wash mid-dive).
-- **Ease-in curve** on dive start (smoothstep; less critical once zoom is floored).
-- From the 3D brainstorm: star height/parallax scatter (cheap), optional two-layer
-  smoke depth (moderate). Full volumetric raymarch ruled out (mobile load).
+- **Ease-in curve** on dive start (smoothstep; less critical if zoom gets floored).
+- Zoom floor as *default* is parked: user is satisfied with the current bottomless
+  dive; the `uZoomFloor` slider (item 13) exists for auditioning the reference-style
+  ending whenever.
+- From the 3D brainstorm: star height/parallax scatter **done** (item 12); optional
+  two-layer smoke depth (moderate) still open. Full volumetric raymarch ruled out
+  (mobile load). Possible cheap extra depth cue if wanted later: dim far-side stars
+  by the dust field (reuses fbmdust, near-free).
 - Per-pixel AA footprint under perspective (`uPxSize` currently a cos(tilt)
   approximation; revisit only if far-side stars shimmer at high tilt).
 - **Final Flutter sync** of all changes when iteration is done.
