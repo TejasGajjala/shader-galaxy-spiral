@@ -352,12 +352,13 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
             vec2 d = p - starPos - hOff;
             float dist = length(d);
 
-            // Flares only wake in the dive's final stretch, and only on
-            // the TOP ~10% of stars by size (hs > 0.9 -- the big bright
-            // ones, like the reference). Everything else keeps the plain
-            // disc and its exact old cost: the per-star gate is what
-            // keeps the flare window from tanking the frame rate.
-            bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.9;
+            // Flares only wake in the dive's final stretch, and only on a
+            // ~10% slice of SMALL stars (user call): a small core with
+            // long thin spikes is what reads as a crisp + star. Big cores
+            // can't -- the screen cap shortens their spikes to ~2R while
+            // thickness scales with R, which reads as a fat diamond blob.
+            // Everything else keeps the plain disc and its exact old cost.
+            bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.30 && hs < 0.40;
             float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
             if (dist < reach) {
                 float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
@@ -456,27 +457,23 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang, vec
             float radius = clamp(starBase, pxCtl.x * 1.2, pxCtl.x * 15.0);
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
-            vec2 d = ps - starPos - hOff;
-            float dist = length(d);
+            float dist = length(ps - starPos - hOff);
 
-            // Same flare kit as the main field: final-stretch only,
-            // screen-capped spike length, sub-cell reach. Floaters are
-            // the biggest stars, so they carry the hero crosses -- but
-            // only about half of them, to keep the finale sparse.
-            bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.5;
-            float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
-            if (dist < reach) {
-                float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
-                float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.y) * atten : 0.0;
-                if (core + flare > 0.0) {
-                    float h = hash1(n + vec2(99.1, 23.7));
-                    float twinkle = 1.0;
-                    if (h > 1.0 - uTwinkleFraction) {
-                        float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
-                        twinkle = mix(0.05, 3.0, pulse);
-                    }
-                    result = max(result, (core + flare) * twinkle);
+            // Floaters do NOT flare (user call): their big capped cores
+            // can only grow short thick spikes, which read as fat diamond
+            // blobs instead of + stars. They stay soft round bokeh discs
+            // -- which is what the reference's biggest end-frame stars
+            // are anyway; the crisp + crosses live on the small
+            // main-field stars instead.
+            if (dist < radius) {
+                float brightness = pow(1.0 - dist / radius, 2.5) * atten;
+                float h = hash1(n + vec2(99.1, 23.7));
+                float twinkle = 1.0;
+                if (h > 1.0 - uTwinkleFraction) {
+                    float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
+                    twinkle = mix(0.05, 3.0, pulse);
                 }
+                result = max(result, brightness * twinkle);
             }
         }
     }

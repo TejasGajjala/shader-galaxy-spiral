@@ -112,9 +112,13 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     approaching the horizon band (spike-stacking streaks). Thin spikes
     0.22·R; bloom deliberately tight (σ² = 2·R², weight 0.25 — wider reads
     as fog); twinkle shimmers the whole flared star. Floater size caps also
-    use pxCtl.x now. Per-star gate (user: lag + too many): only hs > 0.9
-    (top ~10 % by size) of the main field flares, hs > 0.5 of floaters —
-    non-flaring stars keep the plain disc and its exact old cost.
+    use pxCtl.x now. Per-star gate (user: lag + too many, then "+ shape,
+    smaller stars"): only hs ∈ (0.30, 0.40) of the main field flares —
+    ~10 %, SMALL cores, because a crisp + needs long thin spikes and the
+    screen cap gives big cores only ~2R of stubby thick spike (reads as a
+    fat diamond blob). Floaters don't flare at all — they stay soft round
+    bokeh discs, matching the reference's biggest end-frame stars.
+    Non-flaring stars keep the plain disc and its exact old cost.
     Whole flare tapers to exactly zero at the reach boundary
     (`1 − smoothstep(0.65·reach, reach, dist)`) — without it the bloom
     truncated mid-glow and every flared star sat inside a visible
