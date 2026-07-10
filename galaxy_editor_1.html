@@ -275,7 +275,10 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
             vec2 hOff = vec2(0.0);
             if (uDiskThickness > 0.001) {
                 float hh = (hash1(n + vec2(17.9, 61.3)) - 0.5) * 2.0;
-                hOff = parVec * (hh * uDiskThickness * 0.004);
+                // Fuzz saturates at thickness 1: this fine lattice has no
+                // sub-cell budget past that, so slider range above 1 goes
+                // entirely into the floaters (which do have headroom).
+                hOff = parVec * (hh * min(uDiskThickness, 1.0) * 0.004);
                 hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
             }
 
@@ -327,7 +330,10 @@ float starField(vec2 p, float keep, vec2 parVec) {
 // stays valid -- the constraint that forbids big heights on the fine
 // main-field lattice doesn't bite here.
 float floaterField(vec2 p, vec2 parVec, float keep) {
-    float GRID = 2.6;
+    // Coarser than strictly needed for star spacing: cell size sets the
+    // sub-cell offset budget (0.45/GRID below), and this grid leaves room
+    // for uDiskThickness up to ~2 before the tallest floaters clamp.
+    float GRID = 2.0;
     // Chunkier than the lattice stars: floaters must read as individual
     // trackable objects for the parallax slide to register, not vanish
     // into the main-field blizzard mid-dive.
@@ -571,7 +577,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // and thin toward space. Gated on the uniform (fully coherent), so a
     // flat disk pays nothing for the feature.
     if (uDiskThickness > 0.001) {
-        float floatKeep = min(0.9 * exp(-length(p) * 1.1), 1.0);
+        float floatKeep = min(exp(-length(p) * 1.1), 1.0);
         starsV = max(starsV, floaterField(p, parRot, floatKeep) * 1.5);
     }
 
@@ -722,7 +728,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armSpacing',      label: 'Arm spacing',        min: 0.5,  max: 1.8,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'hazeAmount',      label: 'Nebula haze',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
-    { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'ovalness',        label: 'Ovalness (Sa/Sb)',   min: 1.0,  max: 1.7,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'camTilt',         label: 'Camera tilt',        min: 0.0,  max: 1.45, step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'rotSpeed',        label: 'Rotation speed',     min: 0,    max: 0.1,  step: 0.001, fmt: v => v.toFixed(3) },
