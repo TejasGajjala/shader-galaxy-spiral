@@ -1264,7 +1264,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       const elapsed = now - zoomStartTime;
       // "Come alive" beat before the dive, measured off the reference:
       // its haze dips ~0.4-0.8s in, recovers by ~1.2s, then the zoom
-      // takes over. The nebula dims to ~35%, swells back past neutral,
+      // takes over. The nebula dims to 50%, swells back past neutral,
       // and the overshoot bleeds off in the first dive moments. Stars
       // are deliberately untouched -- they hold steady while the haze
       // breathes, which is what sells it.
@@ -1275,8 +1275,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         shaderTime += delta;
         const pp = elapsed / PULSE;
         hazePulse = pp < 0.45
-          ? 1.0 - 0.65 * ss(pp / 0.45)             // dim to 0.35
-          : 0.35 + 0.90 * ss((pp - 0.45) / 0.55);  // swell to 1.25
+          ? 1.0 - 0.50 * ss(pp / 0.45)             // dim to 0.50
+          : 0.50 + 0.75 * ss((pp - 0.45) / 0.55);  // swell to 1.25
         currentZoom = 1.0;
         currentFade = 1.0;
       } else if (elapsed < PULSE + duration) {

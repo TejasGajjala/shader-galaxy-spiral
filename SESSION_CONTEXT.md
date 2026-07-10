@@ -137,7 +137,7 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     with item 20's haze pulse, then zooms linearly (5.5 s as always).
 20. **"Come alive" haze pulse on dive start** — `uHazePulse` uniform (host
     choreography, no slider; 1.0 = neutral). On Boom: 1.2 s beat BEFORE the
-    zoom — nebula dims to 0.35 (smoothstep, bottom ~0.54 s), swells to 1.25
+    zoom — nebula dims to 0.50 (smoothstep, bottom ~0.54 s), swells to 1.25
     by 1.2 s, overshoot bleeds to 1.0 over the dive's first 0.8 s. Stars
     deliberately untouched (steady stars against breathing haze sells it).
     Measured from the reference video: its mean luminance dips ~0.4–0.8 s
