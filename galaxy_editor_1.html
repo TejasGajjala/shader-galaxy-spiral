@@ -272,7 +272,12 @@ float starFlare(vec2 d, float dist, float radius, float reach, float hs, float a
     // into a fog blob -- the spikes, not the bloom, carry the look.
     float bloom = exp(-(dist * dist) / (radius * radius * 2.0));
     float amt = uFlare * flareRamp() * fvis * (0.45 + 0.55 * hs);
-    return (0.5 * (sx + sy) + 0.25 * bloom) * amt;
+    // Taper the whole flare to exactly zero at the reach boundary: the
+    // bloom is still above black there (badly so when the screen cap
+    // pins reach at ~2R on big stars), and truncating it mid-glow drew
+    // every flared star inside a visible clipped disc.
+    float edge = 1.0 - smoothstep(reach * 0.65, reach, dist);
+    return (0.5 * (sx + sy) + 0.25 * bloom) * amt * edge;
 }
 
 // One star grid at a given LOD scale. lvlScale multiplies the grid so

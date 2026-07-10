@@ -115,6 +115,10 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     use pxCtl.x now. Per-star gate (user: lag + too many): only hs > 0.9
     (top ~10 % by size) of the main field flares, hs > 0.5 of floaters —
     non-flaring stars keep the plain disc and its exact old cost.
+    Whole flare tapers to exactly zero at the reach boundary
+    (`1 − smoothstep(0.65·reach, reach, dist)`) — without it the bloom
+    truncated mid-glow and every flared star sat inside a visible
+    clipped disc.
     Perf note: profiling showed the EARLY dive frames are the heaviest
     (full haze × 2 smokeMaps + LOD cross-fade doubling all 8 sheet passes)
     — the dive was already heavy before flares. Biggest untapped mobile
