@@ -427,10 +427,11 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, vec2 pxMM) {
     // ~60 stars per sheet over the disk instead of ~10 -- enough that the
     // ones landing OFF the silhouette read as a population, not strays.
     float GRID = 5.0;
-    // Chunkier than the lattice stars: floaters must read as individual
-    // trackable objects for the parallax slide to register, not vanish
-    // into the main-field blizzard mid-dive.
-    float BASE_R = 0.012;
+    // Near main-star scale: floaters read through their parallax slide
+    // and the deep-dive size cap, not raw bulk -- oversizing them makes
+    // mid-dive floaters balloon (no LOD refill) into bright "pimples"
+    // against the refined swarm.
+    float BASE_R = 0.007;
     vec2 cell = floor(ps * GRID);
     float result = 0.0;
 
@@ -452,7 +453,7 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, vec2 pxMM) {
             hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
 
             float hs = hash1(n + vec2(7.31, 41.7));
-            float starBase = BASE_R * mix(0.6, 1.7, hs * hs);
+            float starBase = BASE_R * mix(0.7, 1.4, hs * hs);
             // Grow on screen as the dive closes in, but cap at ~15 px so
             // a deep zoom never inflates a floater into a huge blob; the
             // sub-pixel end keeps the same energy-conserving AA as the
@@ -718,7 +719,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // past ~2 on the slider they visibly detach from the silhouette.
         float H = uDiskThickness * 0.05;
         starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, pxCtl.xy),
-                                 floaterSheet(p, parRot, -H, 2.0, pxCtl.xy)) * 1.5);
+                                 floaterSheet(p, parRot, -H, 2.0, pxCtl.xy)) * 1.25);
     } else {
         // Oval arm mask decides WHERE stars live; the round starField
         // decides WHAT they look like -- stars trace the oval arms as
