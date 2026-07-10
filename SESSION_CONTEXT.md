@@ -82,6 +82,25 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     flags `pausedDirty` and the paused branch of `frame()` redraws once (no
     clocks advance). This makes pause the A/B tool: pause mid-dive, drag Disk
     thickness 0 ↔ 1, and the frozen frame updates instantly.
+15. **Sheet-based 3D rework** (per-star clamped offsets were imperceptible —
+    any slider value silently saturated the sub-cell clamp). Now everything
+    off-plane lives on exactly-shifted SHEETS: the lattice is sampled at
+    `ps = p − h·parVec`, so lookup and positions stay consistent at ANY
+    height — no clamp, no clipping. Slider range 0–10 (default 0.5).
+    - Arm + bulge populations are dealt across two sheets each via a
+      partition hash (`partLo/partHi` in starFieldLevel — no density change;
+      at h = 0 the union is exactly the flat field). Arm mask / disk falloff
+      evaluated at each sheet's own footprint. Arms = thin slab (h 0.008·t),
+      bulge = puffier (0.025·t), floaters = furthest (0.05·t, GRID 5.0,
+      BASE_R 0.012, two sheets).
+    - Flat path (thickness 0) is a separate branch — still bit-identical.
+    - Perf: LOD cross-fade skip when f≈0 (coherent, halves star pass at rest,
+      helps the FLAT path too); sheet lattices skipped where mask/falloff is
+      below the dither floor. Thick path ≈ +29 % frame on SwiftShader
+      (overstates GPU); flat baseline got ~20 % FASTER than before.
+    - Perceptual note: off-plane offsets project mostly ALONG the disk, so
+      stills only read via stars escaping the silhouette — that took count
+      (dense floater grid), not height.
 
 ## Current defaults (also the Reset state)
 
