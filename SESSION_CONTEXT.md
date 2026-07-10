@@ -132,8 +132,12 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     until ~⅓ zoom, then dies fast as the hole fills the view; ends black
     behind the star swarm like the reference. The gates also skip both
     smokeMap calls late-dive, so the deepest frames get FASTER.
-18. **Dive ease-in** — smoothstep on dive progress (first ~1.5 s barely
-    moves, like the reference; 1/zoom growth still dominates the tail).
+18. **Dive zoom curve** — first a smoothstep ease-in (reference-style soft
+    start), then REPLACED per user with a quadratic ease-out
+    `zoom = (1−p)²`: starts quickly, decelerates toward the end — the last
+    10 % of the dive covers zoom 0.01→0.0001, so the flare/bokeh finale
+    lingers. (Stronger options if wanted: cubic `(1−p)³`, or log-space
+    easing for a constant/decaying perceived rate.)
 19. **Star density slider 0–4** (was 0–2; default unchanged 2.0). Largest
     stars now cap at 0.9 cell so density > ~2.9 can't clip at lattice
     borders (no-op at the old range).

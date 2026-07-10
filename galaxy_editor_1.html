@@ -1261,12 +1261,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       if (elapsed < duration) {
         shaderTime += delta * 5.0;
         const progress = elapsed / duration;
-        // Smoothstep ease-in: like the reference, the dive barely moves
-        // for the first ~1.5s and then keeps building. (The ease-out end
-        // of the curve is never felt -- apparent scale grows as 1/zoom,
-        // which dominates the tail regardless.)
-        const eased = progress * progress * (3.0 - 2.0 * progress);
-        currentZoom = Math.max(0.0001, 1.0 - eased);
+        // Quadratic ease-out (user call, replacing the earlier ease-in):
+        // the dive moves from the first frame and decelerates in
+        // zoom-space toward the end. The tail spends ~10x longer in the
+        // deep zone than a linear ramp, so the black-swarm finale
+        // (crosses, bokeh) gets screen time instead of flashing past.
+        const inv = 1.0 - progress;
+        currentZoom = Math.max(0.0001, inv * inv);
         currentFade = 1.0;
       } else if (elapsed < duration + 700) {
         shaderTime += delta;
