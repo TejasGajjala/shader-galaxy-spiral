@@ -194,7 +194,7 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     from the slider value toward top-down (`currentTilt` in frame(), driven
     by ZOOM progress not time; easeInExpo (normalized 2^(10(p−1))) so the
     whole descent lands in the final stretch of the zoom — the earlier
-    smoothstep-by-75 % version read "too literal, too soon" per user). Floor = 40 % of slider tilt (~29°): full top-down
+    smoothstep-by-75 % version read "too literal, too soon" per user). Floor = 60 % of slider tilt (~44°; was 40 % — full-ish descent read forced, user): full top-down
     forfeits the oblique stretch that keeps distant stars in frame, so the
     hole swallowed the view early and ate the flare finale (tried 12 % —
     late dive went black). Uploaded per frame; sync() uploads currentTilt

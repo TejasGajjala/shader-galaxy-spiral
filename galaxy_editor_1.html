@@ -1339,16 +1339,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // same oblique picture. Exponential ease-in on zoom progress: the
     // view is essentially untouched through the early and mid dive, and
     // the whole descent lands in the final stretch (the plunge). The
-    // floor stays at 40% of the slider tilt (~29 deg): fully top-down
+    // floor stays at 60% of the slider tilt (~44 deg): fully top-down
     // forfeits the oblique stretch that keeps distant stars in frame, so
-    // the hole would swallow the view early and eat the flare finale.
+    // the hole would swallow the view early and eat the flare finale --
+    // and a near-axis end reads forced anyway; a partial lean-in sells
+    // the plunge while keeping the shot composed.
     // Normalized so zoom 1 gives EXACTLY the slider value at rest; the
     // fade phase resets zoom to 1 behind black, snapping the tilt home
     // invisibly (same trick as the core-mode swap).
     const dp = Math.min(1.0, Math.max(0.0, 1.0 - currentZoom));
     const E0 = 1.0 / 1024.0; // 2^-10, the easeInExpo baseline at dp = 0
     const eased = (Math.pow(2.0, 10.0 * (dp - 1.0)) - E0) / (1.0 - E0);
-    currentTilt = state.camTilt * (1.0 - 0.60 * eased);
+    currentTilt = state.camTilt * (1.0 - 0.40 * eased);
     gl.uniform1f(U.uCamTilt, currentTilt);
 
     gl.uniform1f(U.iTime, shaderTime);
