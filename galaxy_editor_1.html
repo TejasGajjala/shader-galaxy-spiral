@@ -1288,7 +1288,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         currentZoom = 1.0;
         currentFade = 1.0;
       } else if (elapsed < PULSE + duration) {
-        shaderTime += delta * 5.0;
+        // Rotation clock: the dive's base 5x spin-up, ramping further as
+        // the camera nears the core (Kepler-flavored: closer orbits move
+        // faster, up to ~20x). Without this the late dive LOOKS frozen --
+        // the haze/arms that make rotation readable are gone by then, a
+        // uniform swarm is nearly rotation-invariant, and the radial rush
+        // swamps the constant tangential speed. shaderTime only drives
+        // the spin angle, so accelerating it is safe (twinkle has its own
+        // wall clock).
+        const depth = 1.0 - currentZoom;
+        shaderTime += delta * 5.0 * (1.0 + 3.0 * depth * depth * depth);
         const t = elapsed - PULSE;
         // Linear zoom: eased curves read worse here.
         currentZoom = Math.max(0.0001, 1.0 - t / duration);

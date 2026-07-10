@@ -202,3 +202,10 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     black. Side effect: the finale reads as a symmetric star tunnel around
     the void. (Init-order gotcha: currentTilt must be declared before the
     first sync() call — TDZ killed the whole page once.)
+22. **Depth-ramped rotation during the dive** — the late dive looked like
+    rotation stopped: the haze/arms that make spin readable are extinct by
+    then, a uniform swarm is nearly rotation-invariant, and the radial rush
+    swamps the constant tangential speed. The dive's rotation clock now
+    ramps `5× → ~20×` with depth (`× (1 + 3·(1−zoom)³)`, Kepler-flavored).
+    shaderTime only drives the spin angle, so the ramp is safe; twinkle
+    keeps its own wall clock.
