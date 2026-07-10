@@ -162,6 +162,10 @@ uniform float uDiskThickness;   // 0 = flat disk (exactly the old look).
                                 // scatter (fuzzy slab rim), plus a sparse
                                 // coarse lattice of real floaters that
                                 // slide with parallax during the dive.
+uniform float uFlare;           // 4-point diffraction spikes + soft bloom
+                                // on the floater stars; subtle at rest and
+                                // ramping up as the dive deepens -- the
+                                // reference's late-dive star signature.
 uniform float uOvalness;        // intrinsic elongation (Sa/Sb); see the
                                 // ovalness frames built in mainImage.
                                 // 1.0 = round (original).
@@ -228,6 +232,13 @@ float hash1(vec2 p) {
     return fract(p.x * p.y);
 }
 
+// Defined up here (not with the body helpers below) because the star
+// fields need it too: flare crosses are drawn screen-aligned, so each
+// star's delta gets un-rotated out of the spinning frame.
+vec2 rotate(in vec2 p, in float t){
+    return p * cos(-t) + vec2(p.y, -p.x) * sin(-t);
+}
+
 // One star grid at a given LOD scale. lvlScale multiplies the grid so
 // star spacing stays roughly constant on screen as the camera dives;
 // BASE_R shrinks by the same factor so star size tracks spacing.
@@ -270,7 +281,10 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
             // uniform sizes read as an artificial dot grid.
             float hs = hash1(n + vec2(7.31, 41.7));
             float sizeMul = mix(0.5, 1.8, hs * hs);
-            float starBase = BASE_R * sizeMul;
+            // Cell-size cap: above star density ~2.9 the largest stars
+            // would outgrow their lattice cell and clip at cell borders;
+            // a no-op at the old density range (identity preserved).
+            float starBase = min(BASE_R * sizeMul, 0.9 / GRID);
             // Energy-conserving anti-aliasing: if the screen can't resolve
             // this star (sub-pixel), draw it just large enough (~1.2 px)
             // but dimmed by the area ratio, so it reads as the same small
@@ -347,7 +361,7 @@ float starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi) {
 // That is what lets high uDiskThickness values scatter stars visibly OFF
 // the disk silhouette (the still-frame-readable 3D cue) instead of
 // silently saturating a clamp. Per-star residual heights stay sub-cell.
-float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed) {
+float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang) {
     vec2 ps = p - parVec * hSheet;   // exact apparent frame of this sheet
     // Presence follows the exponential disk profile of the FOOTPRINT, so
     // floaters cluster over the galaxy even when their apparent position
@@ -390,17 +404,43 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed) {
             float radius = clamp(starBase, uPxSize * 1.2, uPxSize * 15.0);
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
-            float dist = length(ps - starPos - hOff);
+            vec2 d = ps - starPos - hOff;
+            float dist = length(d);
 
-            if (dist < radius) {
-                float brightness = pow(1.0 - dist / radius, 2.5) * atten;
-                float h = hash1(n + vec2(99.1, 23.7));
-                float twinkle = 1.0;
-                if (h > 1.0 - uTwinkleFraction) {
-                    float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
-                    twinkle = mix(0.05, 3.0, pulse);
+            // Flares extend well past the core disc; the reach is capped
+            // just under one cell so the 3x3 lookup never clips a spike.
+            // With flares off the reach collapses to the disc (old cost).
+            float reach = uFlare > 0.001 ? min(radius * 9.0, 0.9 / GRID) : radius;
+            if (dist < reach) {
+                float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
+                float flare = 0.0;
+                if (uFlare > 0.001) {
+                    // 4-point diffraction cross + soft bloom, the
+                    // reference's late-dive star look: thin spikes with a
+                    // quadratic length falloff and a gaussian halo.
+                    // Screen-aligned: un-rotate the delta out of the
+                    // spinning frame, then foreshorten y the way the
+                    // camera tilt does (cos approximation).
+                    vec2 du = rotate(d, -ang);
+                    du.y *= cos(uCamTilt);
+                    float thin = radius * 0.22;
+                    float sx = exp(-abs(du.y) / thin) * pow(max(0.0, 1.0 - abs(du.x) / reach), 2.0);
+                    float sy = exp(-abs(du.x) / thin) * pow(max(0.0, 1.0 - abs(du.y) / reach), 2.0);
+                    float bloom = exp(-(dist * dist) / (radius * radius * 9.0));
+                    // Stronger on bigger stars, subtle at rest, ramping
+                    // up as the dive deepens.
+                    float amt = uFlare * mix(0.3, 1.0, smoothstep(0.5, 0.12, uZoom)) * (0.3 + 0.7 * hs);
+                    flare = (0.5 * (sx + sy) + 0.35 * bloom) * amt * atten;
                 }
-                result = max(result, brightness * twinkle);
+                if (core + flare > 0.0) {
+                    float h = hash1(n + vec2(99.1, 23.7));
+                    float twinkle = 1.0;
+                    if (h > 1.0 - uTwinkleFraction) {
+                        float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
+                        twinkle = mix(0.05, 3.0, pulse);
+                    }
+                    result = max(result, (core + flare) * twinkle);
+                }
             }
         }
     }
@@ -480,10 +520,6 @@ float smokeMap(vec2 ps, vec2 pd){
     float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
     float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
     return max(armTerm, glowTerm);
-}
-
-vec2 rotate(in vec2 p, in float t){
-    return p * cos(-t) + vec2(p.y, -p.x) * sin(-t);
 }
 
 // A handful of floating background stars scattered across the whole frame,
@@ -577,10 +613,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // linear, so vectors transform the same way as positions).
     vec2 parRot = rotate(parVec, ang);
 
+    // Haze extinction during the deep dive: untouched until ~1/3 zoom,
+    // then falls off steeply so the smoke is fully gone as the hole fills
+    // the view -- the reference ends black behind the star swarm, and the
+    // mid-dive flat gray wash disappears with it. Deliberately non-linear:
+    // rest and the early dive see exactly the old haze. Killing the haze
+    // also skips both smokeMap calls (the frame's heaviest work) late in
+    // the dive -- the deep zoom gets FASTER as it gets darker.
+    float hazeVis = smoothstep(0.04, 0.30, uZoom);
+    float hazeAmt = uHaze * hazeVis;
     // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
     // independent, so hiding the haze leaves a clean starfield. Gate is on
     // a uniform, so it's fully coherent -- no per-pixel divergence.
-    float smoke = uHaze > 0.001 ? uHaze * smokeMap(pOval, p) : 0.0;
+    float smoke = hazeAmt > 0.001 ? hazeAmt * smokeMap(pOval, p) : 0.0;
     // Stars. Flat path (uDiskThickness = 0): the original single-plane
     // field, bit for bit, zero extra cost. Thick path: the SAME arm and
     // bulge populations are dealt out across two exactly-shifted height
@@ -622,8 +667,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // Floater sheets: sparse chunky strays at the largest heights --
         // past ~2 on the slider they visibly detach from the silhouette.
         float H = uDiskThickness * 0.05;
-        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0),
-                                 floaterSheet(p, parRot, -H, 2.0)) * 1.5);
+        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, ang),
+                                 floaterSheet(p, parRot, -H, 2.0, ang)) * 1.5);
     } else {
         // Oval arm mask decides WHERE stars live; the round starField
         // decides WHAT they look like -- stars trace the oval arms as
@@ -641,7 +686,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float k  = uCompactness * smoke * groundVis;              // smoky spiral body
     float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
     float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
-    float b = (uHaze > 0.001 ? uHaze * 0.3 * smokeMap(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
+    float b = (hazeAmt > 0.001 ? hazeAmt * 0.3 * smokeMap(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
 
     // Distant background field: a scatter of fixed floating stars, faded
     // in only beyond the galaxy body so it reads as depth behind the
@@ -669,7 +714,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec3 boomLayer = clamp(boomCol, 0.0, 1.6);
 
     float corona = exp(-dot(pOval,pOval)*25.0);
-    boomLayer += corona * uOuterHazeColor * uHaze;
+    boomLayer += corona * uOuterHazeColor * hazeAmt;
 
     // --- COMPUTE NORMAL MODE ---
     // Exact decomposition of the original grayscale formula
@@ -757,11 +802,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uFlare','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 16.0, armSpacing: 1.12,
-    hazeAmount: 0.80, bulgeAmount: 0.70, diskThickness: 0.5, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
+    hazeAmount: 0.80, bulgeAmount: 0.70, diskThickness: 0.5, starFlare: 0.6, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
     compactness: 1.5, starDensity: 2.0, maxStarLod: 2.0, twinkleFraction: 0.99, twinkleSpeed: 3.0,
     coreMode: 0, blackHoleSize: 0.064, centerSpread: 0.5,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
@@ -769,7 +814,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','bulgeAmount','diskThickness','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
+  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -783,11 +828,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'hazeAmount',      label: 'Nebula haze',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 10,   step: 0.05,  fmt: v => v.toFixed(2) },
+    { key: 'starFlare',       label: 'Star flares',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'ovalness',        label: 'Ovalness (Sa/Sb)',   min: 1.0,  max: 1.7,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'camTilt',         label: 'Camera tilt',        min: 0.0,  max: 1.45, step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'rotSpeed',        label: 'Rotation speed',     min: 0,    max: 0.1,  step: 0.001, fmt: v => v.toFixed(3) },
     { key: 'compactness',     label: 'Compactness',        min: 0.5,  max: 3.0,  step: 0.01,  fmt: v => v.toFixed(2) },
-    { key: 'starDensity',     label: 'Star density',       min: 0,    max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'starDensity',     label: 'Star density',       min: 0,    max: 4,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'maxStarLod',      label: 'Max star refill',    min: 0,    max: 6,    step: 0.1,   fmt: v => v.toFixed(1) },
     { key: 'twinkleFraction', label: 'Twinkle amount',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'twinkleSpeed',    label: 'Twinkle speed',      min: 0,    max: 8,    step: 0.05,  fmt: v => v.toFixed(2) },
@@ -814,7 +860,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   const UNIFORM_TO_KEY = {
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing',
     uHaze: 'hazeAmount', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
-    uOvalness: 'ovalness', uCamTilt: 'camTilt',
+    uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
     uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
     uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
     uBlackHoleSize: 'blackHoleSize', uCenterSpread: 'centerSpread'
@@ -941,6 +987,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uHaze            = ' + state.hazeAmount.toFixed(2) + ';',
       'uBulge           = ' + state.bulgeAmount.toFixed(2) + ';',
       'uDiskThickness   = ' + state.diskThickness.toFixed(2) + ';',
+      'uFlare           = ' + state.starFlare.toFixed(2) + ';',
       'uOvalness        = ' + state.ovalness.toFixed(2) + ';',
       'uCamTilt         = ' + state.camTilt.toFixed(2) + ';',
       'uRotSpeed        = ' + state.rotSpeed.toFixed(3) + ';',
@@ -970,6 +1017,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uHaze, state.hazeAmount);
     gl.uniform1f(U.uBulge, state.bulgeAmount);
     gl.uniform1f(U.uDiskThickness, state.diskThickness);
+    gl.uniform1f(U.uFlare, state.starFlare);
     gl.uniform1f(U.uOvalness, state.ovalness);
     gl.uniform1f(U.uCamTilt, state.camTilt);
     gl.uniform1f(U.uRotSpeed, state.rotSpeed);
@@ -1167,7 +1215,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       if (elapsed < duration) {
         shaderTime += delta * 5.0;
         const progress = elapsed / duration;
-        currentZoom = Math.max(0.0001, 1.0 - progress);
+        // Smoothstep ease-in: like the reference, the dive barely moves
+        // for the first ~1.5s and then keeps building. (The ease-out end
+        // of the curve is never felt -- apparent scale grows as 1/zoom,
+        // which dominates the tail regardless.)
+        const eased = progress * progress * (3.0 - 2.0 * progress);
+        currentZoom = Math.max(0.0001, 1.0 - eased);
         currentFade = 1.0;
       } else if (elapsed < duration + 700) {
         shaderTime += delta;

@@ -101,12 +101,29 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     - Perceptual note: off-plane offsets project mostly ALONG the disk, so
       stills only read via stars escaping the silhouette — that took count
       (dense floater grid), not height.
+16. **Star diffraction flares + bloom** — `uFlare` (default 0.60). 4-point
+    screen-aligned crosses (delta un-rotated out of the spinning frame,
+    y foreshortened by cos(tilt)) + gaussian bloom on the FLOATER stars
+    (the chunky late-dive carriers; needs uDiskThickness > 0). Thin spikes
+    (0.22·R), reach 9·R capped sub-cell so the 3×3 lookup never clips.
+    Intensity ramps with dive depth (smoothstep 0.5→0.12 zoom; ~30 % at
+    rest) and star size; twinkle applies to the whole flared star.
+17. **Haze extinction in the deep dive** — `hazeVis = smoothstep(0.04, 0.30,
+    uZoom)` multiplying smoke/b/corona. Non-linear per user: haze untouched
+    until ~⅓ zoom, then dies fast as the hole fills the view; ends black
+    behind the star swarm like the reference. The gates also skip both
+    smokeMap calls late-dive, so the deepest frames get FASTER.
+18. **Dive ease-in** — smoothstep on dive progress (first ~1.5 s barely
+    moves, like the reference; 1/zoom growth still dominates the tail).
+19. **Star density slider 0–4** (was 0–2; default unchanged 2.0). Largest
+    stars now cap at 0.9 cell so density > ~2.9 can't clip at lattice
+    borders (no-op at the old range).
 
 ## Current defaults (also the Reset state)
 
 ```
 uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 0.70
-uDiskThickness 0.50 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
+uDiskThickness 0.50 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
 uStarDensity 2.00 · uMaxStarLod 2.0 · uTwinkleFraction 0.99 · uTwinkleSpeed 3.00
 uCoreMode 0 · uBlackHoleSize 0.064 · uCenterSpread 0.50
 boom:   center (0.294,0.376,0.569) · arm (0,0.482,1) · haze (0.259,0.345,1) · star (1,1,1)
@@ -115,11 +132,11 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 
 ## Pending / agreed next steps (not yet implemented)
 
-- **Star diffraction flares + bloom** on large/bright stars late in the dive — the one
-  genuinely new shader feature still missing vs. the reference.
-- **Late-dive star size tuning** (reference stars reach ~2 % screen width).
-- **Haze thinning during deep zoom** (avoid flat gray wash mid-dive).
-- **Ease-in curve** on dive start (smoothstep; less critical if zoom gets floored).
+- **Late-dive star size tuning** (reference stars reach ~2 % screen width; we
+  cap floaters at ~15 px — compare against the reference end frame).
+- Flare polish: near the horizon the constant cos(tilt) foreshortening
+  under-corrects, so spikes stretch into vertical streaks at the top band
+  during deep dives — revisit with a per-pixel factor if it bothers.
 - Zoom floor is parked entirely (slider removed — see item 13): a bare clamp just
   stalls the animation before the fade. If the reference's ~10–15× composed ending
   is ever wanted, re-time the dive choreography (ease-out into the floor) instead.
