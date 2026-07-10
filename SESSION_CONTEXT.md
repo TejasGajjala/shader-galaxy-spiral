@@ -119,6 +119,10 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     fat diamond blob). Floaters don't flare at all — they stay soft round
     bokeh discs, matching the reference's biggest end-frame stars.
     Non-flaring stars keep the plain disc and its exact old cost.
+    Star size caps use the MIN-axis per-pixel footprint (max-axis for AA
+    floors): worst-axis caps bounded only the compressed screen dimension,
+    so deep-zoom floaters stretched into wide white ovals on foreshortened
+    regions ("crossing size limits", user). Rest state unaffected.
     Whole flare tapers to exactly zero at the reach boundary
     (`1 − smoothstep(0.65·reach, reach, dist)`) — without it the bloom
     truncated mid-glow and every flared star sat inside a visible
