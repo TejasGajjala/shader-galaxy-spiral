@@ -9,13 +9,29 @@
   body {
     margin: 0; background: #0d0d14; color: rgba(255,255,255,0.9);
     font-family: system-ui, sans-serif;
-    display: flex; flex-direction: column; align-items: center;
     padding: 24px 16px 60px;
   }
+  /* Wide screens: phone pinned left, controls scroll independently to the
+     right so slider changes are visible next to the canvas without
+     scrolling away from it. Narrow screens: stacked, phone on top -- see
+     the max-width:900px override below. */
+  #layout {
+    display: flex; flex-direction: row; align-items: flex-start;
+    justify-content: center; gap: 32px; max-width: 1100px; margin: 0 auto;
+  }
   #phone {
-    position: relative; width: 420px; height: 868px;
+    position: sticky; top: 24px;
+    flex: 0 0 auto;
+    width: 420px; height: 868px;
     border-radius: 48px; border: 14px solid #1a1a2e; background: #000;
     box-shadow: 0 20px 60px rgba(0,0,0,0.5); overflow: hidden;
+  }
+  @media (max-width: 900px) {
+    #layout { flex-direction: column; align-items: center; }
+    /* Stays "relative", not "static": boom/pause/mode buttons are
+       position:absolute against #phone, and "sticky" with no scroll
+       container above it behaves like static anyway once stacked. */
+    #phone { position: relative; top: auto; }
   }
   canvas { width: 100%; height: 100%; display: block; }
   #boom-btn {
@@ -49,7 +65,9 @@
   }
   .instant-row button:hover { background: rgba(255,255,255,0.12); }
   .instant-row button:active { box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
-  #panel { width: 100%; max-width: 560px; margin-top: 20px; }
+  #panel { width: 100%; max-width: 560px; margin-top: 20px; flex: 1 1 420px; min-width: 0; }
+  @media (max-width: 900px) { #panel { margin-top: 20px; } }
+  @media (min-width: 901px) { #panel { margin-top: 0; } }
   .section-title { font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
   .card { background: #181826; border-radius: 10px; padding: 10px 12px; }
@@ -85,6 +103,7 @@
 </style>
 </head>
 <body>
+<div id="layout">
 <div id="phone">
   <canvas id="galaxy-canvas"></canvas>
   <button id="boom-btn">Let's boom</button>
@@ -108,6 +127,7 @@
   </div>
   <textarea id="glsl-out" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
   <div id="glsl-hint">Edit or paste values above, then click "Apply edited values" (or press Ctrl/Cmd+Enter while focused) to update the sliders and render.</div>
+</div>
 </div>
 
 <script>
