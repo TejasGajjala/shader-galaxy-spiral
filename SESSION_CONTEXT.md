@@ -132,12 +132,18 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     until ~⅓ zoom, then dies fast as the hole fills the view; ends black
     behind the star swarm like the reference. The gates also skip both
     smokeMap calls late-dive, so the deepest frames get FASTER.
-18. **Dive zoom curve** — first a smoothstep ease-in (reference-style soft
-    start), then REPLACED per user with a quadratic ease-out
-    `zoom = (1−p)²`: starts quickly, decelerates toward the end — the last
-    10 % of the dive covers zoom 0.01→0.0001, so the flare/bokeh finale
-    lingers. (Stronger options if wanted: cubic `(1−p)³`, or log-space
-    easing for a constant/decaying perceived rate.)
+18. **Dive zoom curve — LINEAR** (final, user call). Smoothstep ease-in and
+    quadratic ease-out were both tried and reverted. Instead the dive opens
+    with item 20's haze pulse, then zooms linearly (5.5 s as always).
+20. **"Come alive" haze pulse on dive start** — `uHazePulse` uniform (host
+    choreography, no slider; 1.0 = neutral). On Boom: 1.2 s beat BEFORE the
+    zoom — nebula dims to 0.35 (smoothstep, bottom ~0.54 s), swells to 1.25
+    by 1.2 s, overshoot bleeds to 1.0 over the dive's first 0.8 s. Stars
+    deliberately untouched (steady stars against breathing haze sells it).
+    Measured from the reference video: its mean luminance dips ~0.4–0.8 s
+    in, recovers by ~1.2 s, then the dive brightens. Multiplies `hazeAmt`
+    (smoke, glow layer, corona) alongside hazeVis. Verified: −43 % mean
+    frame brightness at the dim bottom, swell past neutral after.
 19. **Star density slider 0–4** (was 0–2; default unchanged 2.0). Largest
     stars now cap at 0.9 cell so density > ~2.9 can't clip at lattice
     borders (no-op at the old range).
