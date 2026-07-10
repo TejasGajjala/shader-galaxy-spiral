@@ -66,7 +66,6 @@
   .instant-row button:hover { background: rgba(255,255,255,0.12); }
   .instant-row button:active { box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
   #panel { width: 100%; max-width: 560px; margin-top: 20px; flex: 1 1 420px; min-width: 0; }
-  @media (max-width: 900px) { #panel { margin-top: 20px; } }
   @media (min-width: 901px) { #panel { margin-top: 0; } }
   .section-title { font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
@@ -209,7 +208,6 @@ uniform vec3 uNormalHazeColor;
 uniform vec3 uNormalStarColor;
 uniform float uCenterSpread;    // how far the center tint reaches (gaussian)
 
-const vec2 m = vec2(2.0, 12.0);
 const mat2 m2 = mat2(0.8, 0.6, -0.6, 0.8);
 
 float noise(in vec2 p) {
@@ -243,6 +241,18 @@ float hash1(vec2 p) {
 // star's delta gets un-rotated out of the spinning frame.
 vec2 rotate(in vec2 p, in float t){
     return p * cos(-t) + vec2(p.y, -p.x) * sin(-t);
+}
+
+// Per-star twinkle: exactly uTwinkleFraction of stars pulse, each on its
+// own phase of the wall-clock uTwinkleTime, so rotation/dive speed never
+// affects the shimmer.
+float starTwinkle(vec2 n) {
+    float h = hash1(n + vec2(99.1, 23.7));
+    if (h > 1.0 - uTwinkleFraction) {
+        float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
+        return mix(0.05, 3.0, pulse);
+    }
+    return 1.0;
 }
 
 // --- Shared flare kit -------------------------------------------------
@@ -356,11 +366,10 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
             vec2 d = p - starPos - hOff;
             float dist = length(d);
 
-            // Flares only wake in the dive's final stretch, and only on a
-            // ~10% slice of SMALL stars (user call): a small core with
-            // long thin spikes is what reads as a crisp + star. Big cores
-            // can't -- the screen cap shortens their spikes to ~2R while
-            // thickness scales with R, which reads as a fat diamond blob.
+            // Flares wake only in the dive's final stretch, on a ~10%
+            // slice of SMALL stars: a small core with long thin spikes
+            // reads as a crisp +, while big cores hit the screen cap at
+            // ~2R with spike thickness scaling up (a fat diamond blob).
             // Everything else keeps the plain disc and its exact old cost.
             bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.30 && hs < 0.40;
             float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
@@ -368,15 +377,7 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
                 float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
                 float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.y) * atten : 0.0;
                 if (core + flare > 0.0) {
-                    float h = hash1(n + vec2(99.1, 23.7));
-                    float twinkle = 1.0;
-                    // Exactly uTwinkleFraction of stars twinkle, on their
-                    // own clock (uTwinkleTime) so rotation has no effect.
-                    if (h > 1.0 - uTwinkleFraction) {
-                        float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
-                        twinkle = mix(0.05, 3.0, pulse);
-                    }
-                    result = max(result, (core + flare) * twinkle);
+                    result = max(result, (core + flare) * starTwinkle(n));
                 }
             }
         }
@@ -416,7 +417,7 @@ float starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, flo
 // That is what lets high uDiskThickness values scatter stars visibly OFF
 // the disk silhouette (the still-frame-readable 3D cue) instead of
 // silently saturating a clamp. Per-star residual heights stay sub-cell.
-float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang, vec2 pxCtl) {
+float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float pxL) {
     vec2 ps = p - parVec * hSheet;   // exact apparent frame of this sheet
     // Presence follows the exponential disk profile of the FOOTPRINT, so
     // floaters cluster over the galaxy even when their apparent position
@@ -455,29 +456,22 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, float ang, vec
             // Grow on screen as the dive closes in, but cap at ~15 px so
             // a deep zoom never inflates a floater into a huge blob; the
             // sub-pixel end keeps the same energy-conserving AA as the
-            // main field. Caps use the PER-PIXEL footprint (pxCtl.x): the
+            // main field. Caps use the PER-PIXEL footprint pxL -- the
             // global uPxSize let near-side floaters balloon into giant
             // soft discs on the expanded bottom of the tilted plane.
-            float radius = clamp(starBase, pxCtl.x * 1.2, pxCtl.x * 15.0);
+            float radius = clamp(starBase, pxL * 1.2, pxL * 15.0);
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
             float dist = length(ps - starPos - hOff);
 
-            // Floaters do NOT flare (user call): their big capped cores
-            // can only grow short thick spikes, which read as fat diamond
-            // blobs instead of + stars. They stay soft round bokeh discs
-            // -- which is what the reference's biggest end-frame stars
-            // are anyway; the crisp + crosses live on the small
-            // main-field stars instead.
+            // Floaters never flare: big capped cores can only grow short
+            // thick spikes (diamond blobs, not + stars). They render as
+            // soft round bokeh discs -- exactly what the reference's
+            // biggest end-frame stars are; the crisp + crosses live on
+            // the small main-field stars instead.
             if (dist < radius) {
                 float brightness = pow(1.0 - dist / radius, 2.5) * atten;
-                float h = hash1(n + vec2(99.1, 23.7));
-                float twinkle = 1.0;
-                if (h > 1.0 - uTwinkleFraction) {
-                    float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
-                    twinkle = mix(0.05, 3.0, pulse);
-                }
-                result = max(result, brightness * twinkle);
+                result = max(result, brightness * starTwinkle(n));
             }
         }
     }
@@ -717,8 +711,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // Floater sheets: sparse chunky strays at the largest heights --
         // past ~2 on the slider they visibly detach from the silhouette.
         float H = uDiskThickness * 0.05;
-        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, ang, pxCtl),
-                                 floaterSheet(p, parRot, -H, 2.0, ang, pxCtl)) * 1.5);
+        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, pxCtl.x),
+                                 floaterSheet(p, parRot, -H, 2.0, pxCtl.x)) * 1.5);
     } else {
         // Oval arm mask decides WHERE stars live; the round starField
         // decides WHAT they look like -- stars trace the oval arms as
@@ -1259,6 +1253,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     const delta = (now - lastFrame) / 1000.0;
     lastFrame = now;
     twinkleTime += delta; // always real-time, regardless of dive/rotation
+    hazePulse = 1.0;      // neutral unless the pulse/dive branches override
 
     if (isZooming) {
       const elapsed = now - zoomStartTime;
@@ -1282,18 +1277,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       } else if (elapsed < PULSE + duration) {
         shaderTime += delta * 5.0;
         const t = elapsed - PULSE;
-        // Linear dive (user call -- eased variants tried and reverted).
+        // Linear zoom: eased curves read worse here.
         currentZoom = Math.max(0.0001, 1.0 - t / duration);
         hazePulse = 1.0 + 0.25 * Math.max(0.0, 1.0 - t / 800); // settle the overshoot
         currentFade = 1.0;
       } else if (elapsed < PULSE + duration + 700) {
         shaderTime += delta;
-        hazePulse = 1.0;
         currentZoom = 0.0001;
         currentFade = 1.0;
       } else if (elapsed < PULSE + duration + 700 + 1500) {
         shaderTime += delta;
-        hazePulse = 1.0;
         colorTransition = transitionTarget;
         // Core style follows the target mode (black hole in normal, white
         // core in boom), same as the instant mode buttons. Switched while
@@ -1306,7 +1299,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         currentFade = Math.min(1.0, fadeProgress);
       } else {
         shaderTime += delta;
-        hazePulse = 1.0;
         isZooming = false;
         colorTransition = transitionTarget;
         state.coreMode = transitionTarget > 0.5 ? 1 : 0;
@@ -1327,7 +1319,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       }
     } else {
       shaderTime += delta;
-      hazePulse = 1.0;
     }
 
     gl.uniform1f(U.iTime, shaderTime);
