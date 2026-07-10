@@ -321,42 +321,47 @@ float starField(vec2 p, float keep, vec2 parVec) {
     return mix(a, b, f);
 }
 
-// Sparse off-plane "floater" stars on a coarse fixed lattice (no LOD).
-// Each gets a real signed height -- a few percent of the disk radius --
-// and its exact perspective offset, so during a dive they slide against
-// the in-plane field (parallax) and grow without refilling: the cue that
-// reads as moving THROUGH the disk instead of magnifying a picture. The
-// coarse cells keep even the largest offset sub-cell, so the 3x3 lookup
-// stays valid -- the constraint that forbids big heights on the fine
-// main-field lattice doesn't bite here.
-float floaterField(vec2 p, vec2 parVec, float keep) {
-    // Coarser than strictly needed for star spacing: cell size sets the
-    // sub-cell offset budget (0.45/GRID below), and this grid leaves room
-    // for uDiskThickness up to ~2 before the tallest floaters clamp.
-    float GRID = 2.0;
+// One SHEET of off-plane floater stars: a coarse lattice living at a fixed
+// height hSheet above (or below) the galaxy plane. Instead of offsetting
+// each star from its footprint (which is limited to sub-cell shifts by the
+// 3x3 lookup), the WHOLE lattice is sampled in the sheet's exactly-shifted
+// frame ps = p - hSheet * parVec -- lookup and star positions stay
+// consistent, so the height can be arbitrarily large with zero clipping.
+// That is what lets high uDiskThickness values scatter stars visibly OFF
+// the disk silhouette (the still-frame-readable 3D cue) instead of
+// silently saturating a clamp. Per-star residual heights stay sub-cell.
+float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed) {
+    vec2 ps = p - parVec * hSheet;   // exact apparent frame of this sheet
+    // Presence follows the exponential disk profile of the FOOTPRINT, so
+    // floaters cluster over the galaxy even when their apparent position
+    // hovers far off the rim.
+    float keep = min(exp(-length(ps) * 1.1), 1.0);
+    // Denser grid costs nothing (the loop always checks 9 cells) but puts
+    // ~60 stars per sheet over the disk instead of ~10 -- enough that the
+    // ones landing OFF the silhouette read as a population, not strays.
+    float GRID = 5.0;
     // Chunkier than the lattice stars: floaters must read as individual
     // trackable objects for the parallax slide to register, not vanish
     // into the main-field blizzard mid-dive.
-    float BASE_R = 0.010;
-    vec2 cell = floor(p * GRID);
+    float BASE_R = 0.012;
+    vec2 cell = floor(ps * GRID);
     float result = 0.0;
 
     for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
-            vec2 n = cell + vec2(float(dx), float(dy)) + vec2(41.0, 17.0);
+            vec2 n = cell + vec2(float(dx), float(dy)) + vec2(seed * 61.0, seed * 23.0);
 
             if (hash1(n + vec2(13.7, 57.3)) > keep) continue;
 
             float hx = hash1(n + vec2(1.7, 9.2));
             float hy = hash1(n + vec2(8.3, 2.6));
-            vec2 starPos = (n - vec2(41.0, 17.0) + vec2(hx, hy)) / GRID;
+            vec2 starPos = (n - vec2(seed * 61.0, seed * 23.0) + vec2(hx, hy)) / GRID;
 
-            // Signed height with magnitude biased away from zero, so
-            // floaters genuinely hover instead of hiding inside the
-            // main field's sub-cell slab fuzz.
-            float sgn = hash1(n + vec2(23.1, 5.9)) > 0.5 ? 1.0 : -1.0;
-            float mag = mix(0.35, 1.0, hash1(n + vec2(3.7, 91.3)));
-            vec2 hOff = parVec * (sgn * mag * uDiskThickness * 0.05);
+            // Per-star residual height so the sheet doesn't read as a
+            // rigid plane; kept sub-cell (0.45/GRID) so the 3x3 lookup in
+            // the sheet frame never clips.
+            float hh = (hash1(n + vec2(3.7, 91.3)) - 0.5) * 2.0;
+            vec2 hOff = parVec * (hh * min(abs(hSheet) * 0.5, 0.025));
             hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
 
             float hs = hash1(n + vec2(7.31, 41.7));
@@ -368,7 +373,7 @@ float floaterField(vec2 p, vec2 parVec, float keep) {
             float radius = clamp(starBase, uPxSize * 1.2, uPxSize * 15.0);
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
-            float dist = length(p - starPos - hOff);
+            float dist = length(ps - starPos - hOff);
 
             if (dist < radius) {
                 float brightness = pow(1.0 - dist / radius, 2.5) * atten;
@@ -572,13 +577,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float bulgeKeep = min(uBulge * exp(-length(p) * 1.85), 1.0);
     float bulgeStars = starField(p, bulgeKeep, parRot) * 1.5 * 0.8;
     float starsV = max(starMask * starField(p, 1.0, parRot) * 1.5, bulgeStars);
-    // Off-plane floaters: presence follows the same exponential-disk
-    // profile as the bulge population, so they cluster over the galaxy
-    // and thin toward space. Gated on the uniform (fully coherent), so a
-    // flat disk pays nothing for the feature.
+    // Off-plane floaters: two sheets, one above and one below the plane
+    // (independent star sets via the seed), each at +/- H. Because the
+    // sheet frame is exact, H can be huge: past ~2 the stars visibly
+    // detach from the disk silhouette and hover in space above/below the
+    // rim. Gated on the uniform (fully coherent), so a flat disk pays
+    // nothing for the feature.
     if (uDiskThickness > 0.001) {
-        float floatKeep = min(exp(-length(p) * 1.1), 1.0);
-        starsV = max(starsV, floaterField(p, parRot, floatKeep) * 1.5);
+        float H = uDiskThickness * 0.05;
+        float fl = max(floaterSheet(p, parRot, H, 1.0),
+                       floaterSheet(p, parRot, -H, 2.0));
+        starsV = max(starsV, fl * 1.5);
     }
 
     // groundVis gates every galaxy-body term so the region beyond the
@@ -728,7 +737,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armSpacing',      label: 'Arm spacing',        min: 0.5,  max: 1.8,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'hazeAmount',      label: 'Nebula haze',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
-    { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 10,   step: 0.05,  fmt: v => v.toFixed(2) },
     { key: 'ovalness',        label: 'Ovalness (Sa/Sb)',   min: 1.0,  max: 1.7,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'camTilt',         label: 'Camera tilt',        min: 0.0,  max: 1.45, step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'rotSpeed',        label: 'Rotation speed',     min: 0,    max: 0.1,  step: 0.001, fmt: v => v.toFixed(3) },
