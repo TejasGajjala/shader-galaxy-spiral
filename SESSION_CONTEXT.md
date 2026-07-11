@@ -158,7 +158,7 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 ## Current defaults (also the Reset state)
 
 ```
-uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 1.50
+uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uDustWarp 0.00 · uGasClouds 0.50 · uBulge 1.50
 uDiskThickness 0.00 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
 uStarDensity 3.20 · uMaxStarLod 2.0 · uTwinkleFraction 0.14 · uTwinkleSpeed 0.00
 uCoreMode 0 · uBlackHoleSize 0.049 · uCenterSpread 0.50
@@ -239,4 +239,27 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     dive isn't smeared into fingerprint whorls, and skipped entirely with
     the haze gate. uDustWarp = 0 is bit-identical to the pre-port shader
     (verified: 0 differing bytes vs HEAD screenshot). Subtle at 0.6;
-    pronounced waves at 1.2+.
+    pronounced waves at 1.2+. User verdict after trying it: still buried
+    under the stars, no noticeable difference — default set back to 0.0
+    (slider kept for now; remove in a cleanup pass if the gas clouds
+    prove to be the real answer).
+26. **Gas clouds layer** (`uGasClouds`, "Gas clouds" slider 0–1, default
+    0.5) — the working answer to "nebula masked by stars" (reference
+    video's gauze): a sparse second layer of soft fog banks floating OVER
+    the disk, deliberately NOT arm-masked, so the banks wash out over the
+    star-packed arms but read clearly in the dark winding gaps — visibility
+    from placement, star brightness untouched (item 24 rule). Sampled in
+    its own rotation frame at 78 % of the spiral's angular speed
+    (`rotate(pOval, 0.22·uRotSpeed·iTime)`) so the banks visibly drift
+    relative to the arms; the dive's ramped clock accelerates both in
+    parallel. Pattern: three noise taps (banks 0.85 / structure m2·1.4 /
+    mottle m2·2.8), wide soft threshold `smoothstep(-0.05, 0.85, ...)`,
+    disk envelope `smoothstep(2.0, 1.45, r)·smoothstep(0.10, 0.40, r)`
+    (small rim overhang, inside the rCut early-out; clean center). Tinted
+    per mode (uOuterHazeColor / uNormalHazeColor·0.85), added BEFORE the
+    core mix so the hole punches through; rides uHazePulse for the
+    come-alive beat. Fades out mid-dive, EARLIER than the main haze:
+    `cloudVis = smoothstep(0.32, 0.55, uZoom)` (gone ~70 % into the zoom
+    while haze holds to 0.18); uniform gate skips everything when extinct
+    or at 0 — bit-identical off (verified 0 differing bytes), perf flat
+    within SwiftShader noise.

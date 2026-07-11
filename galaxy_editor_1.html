@@ -182,6 +182,12 @@ uniform float uDustWarp;        // domain-warp strength for the dust
                                 // shears the dust texture along the local
                                 // orbital tangent into wispy wave-like
                                 // strands. 0 = off, bit-identical.
+uniform float uGasClouds;       // gauzy fog banks floating OVER the disk,
+                                // scattered at random (not arm-masked), so
+                                // they read in the dark winding gaps where
+                                // nothing competes with them. Own rotation
+                                // frame slightly slower than the spiral =
+                                // visible relative drift. 0 = off.
 uniform float uOvalness;        // intrinsic elongation (Sa/Sb); see the
                                 // ovalness frames built in mainImage.
                                 // 1.0 = round (original).
@@ -730,6 +736,36 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // independent, so hiding the haze leaves a clean starfield. Gate is on
     // a uniform, so it's fully coherent -- no per-pixel divergence.
     float smoke = hazeAmt > 0.001 ? hazeAmt * smokeMap(pOval, p, pw) : 0.0;
+    // Gas clouds: a sparse second layer of soft fog banks floating OVER
+    // the disk (reference video: gauze drifting through the dark winding
+    // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
+    // banks wash out, but in the gaps nothing competes with them, so the
+    // layer reads without touching star brightness (the item-24 rule).
+    // Sampled in its own rotation frame at 78% of the spiral's angular
+    // speed: the banks visibly slide relative to the arms, and the dive's
+    // ramped clock accelerates both together, keeping the drift parallel.
+    // Fades out mid-dive, earlier than the main haze; the uniform gate
+    // skips all of it once extinct or disabled, so the dive only gets
+    // cheaper. Cost when on: one rotate + three noise taps.
+    float cloudVis = smoothstep(0.32, 0.55, uZoom);
+    float gas = 0.0;
+    if (uGasClouds > 0.001 && cloudVis > 0.001) {
+        vec2 pc = rotate(pOval, 0.22 * uRotSpeed * iTime); // = 0.78x spin
+        float rc = length(pc);
+        float n1 = noise(pc * 0.85 + vec2(9.2, 2.6));      // big banks
+        float n2 = noise(m2 * pc * 1.4 + vec2(4.4, 7.7));  // medium structure
+        float n3 = noise(m2 * pc * 2.8 + vec2(1.9, 5.3));  // internal mottle
+        // Wide, soft threshold on mostly-low-frequency noise -> broad
+        // diffuse banks with feathered edges (not popcorn clumps), enough
+        // of them that several land in the mid-disk winding gaps.
+        float bank = smoothstep(-0.05, 0.85, n1 * 0.7 + n2 * 0.3);
+        // Disk envelope: hugs the galaxy with a small overhang past the
+        // arm rim (dies inside the rCut early-out), and thins at the very
+        // center so the core glow stays clean.
+        float cEnv = smoothstep(2.0, 1.45, rc) * smoothstep(0.10, 0.40, rc);
+        gas = uGasClouds * bank * (0.75 + 0.25 * n3) * cEnv * cloudVis
+            * uHazePulse * 0.5;
+    }
     // Stars. Flat path (uDiskThickness = 0): the original single-plane
     // field, bit for bit, zero extra cost. Thick path: the SAME arm and
     // bulge populations are dealt out across two exactly-shifted height
@@ -841,6 +877,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
                    + uNormalHazeColor  * (0.4 * b / 3.0);
     vec3 normalLayer = clamp(normalCol, 0.0, 1.6);
 
+    // Gas-cloud gauze, tinted like the nebula in each mode. Added before
+    // the core mix so the hole / white core still punches through, and
+    // additively over the body so stars shine through the banks.
+    float gasG = gas * groundVis;
+    boomLayer   += uOuterHazeColor  * gasG;
+    normalLayer += uNormalHazeColor * gasG * 0.85;
+
     // --- CORE (both modes): uCoreMode 0 = black hole, 1 = bright white core
     // Black hole has no rim glow and a wide soft edge, so surrounding haze
     // and stars feather gently into the void; white core keeps a tight edge.
@@ -912,11 +955,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uFlare','uHazePulse','uDustWarp','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uFlare','uHazePulse','uDustWarp','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 16.0, armSpacing: 1.12,
-    hazeAmount: 0.80, dustWarp: 0.6, bulgeAmount: 1.5, diskThickness: 0.0, starFlare: 0.6, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
+    hazeAmount: 0.80, dustWarp: 0.0, gasClouds: 0.5, bulgeAmount: 1.5, diskThickness: 0.0, starFlare: 0.6, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
     compactness: 1.5, starDensity: 3.2, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
     coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
@@ -924,7 +967,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','dustWarp','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
+  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','dustWarp','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -937,6 +980,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armSpacing',      label: 'Arm spacing',        min: 0.5,  max: 1.8,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'hazeAmount',      label: 'Nebula haze',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'dustWarp',        label: 'Dust filaments',     min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'gasClouds',       label: 'Gas clouds',         min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 10,   step: 0.05,  fmt: v => v.toFixed(2) },
     { key: 'starFlare',       label: 'Star flares',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
@@ -970,7 +1014,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
   const UNIFORM_TO_KEY = {
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing',
-    uHaze: 'hazeAmount', uDustWarp: 'dustWarp', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
+    uHaze: 'hazeAmount', uDustWarp: 'dustWarp', uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
     uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
     uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
     uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
@@ -1097,6 +1141,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uArmSpacing      = ' + state.armSpacing.toFixed(2) + ';',
       'uHaze            = ' + state.hazeAmount.toFixed(2) + ';',
       'uDustWarp        = ' + state.dustWarp.toFixed(2) + ';',
+      'uGasClouds       = ' + state.gasClouds.toFixed(2) + ';',
       'uBulge           = ' + state.bulgeAmount.toFixed(2) + ';',
       'uDiskThickness   = ' + state.diskThickness.toFixed(2) + ';',
       'uFlare           = ' + state.starFlare.toFixed(2) + ';',
@@ -1128,6 +1173,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uArmSpacing, state.armSpacing);
     gl.uniform1f(U.uHaze, state.hazeAmount);
     gl.uniform1f(U.uDustWarp, state.dustWarp);
+    gl.uniform1f(U.uGasClouds, state.gasClouds);
     gl.uniform1f(U.uBulge, state.bulgeAmount);
     gl.uniform1f(U.uDiskThickness, state.diskThickness);
     gl.uniform1f(U.uFlare, state.starFlare);
