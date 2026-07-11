@@ -752,17 +752,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (uGasClouds > 0.001 && cloudVis > 0.001) {
         vec2 pc = rotate(pOval, 0.22 * uRotSpeed * iTime); // = 0.78x spin
         float rc = length(pc);
-        float n1 = noise(pc * 0.85 + vec2(9.2, 2.6));      // big banks
-        float n2 = noise(m2 * pc * 1.4 + vec2(4.4, 7.7));  // medium structure
-        float n3 = noise(m2 * pc * 2.8 + vec2(1.9, 5.3));  // internal mottle
-        // Wide, soft threshold on mostly-low-frequency noise -> broad
-        // diffuse banks with feathered edges (not popcorn clumps), enough
-        // of them that several land in the mid-disk winding gaps.
-        float bank = smoothstep(-0.05, 0.85, n1 * 0.7 + n2 * 0.3);
-        // Disk envelope: hugs the galaxy with a small overhang past the
-        // arm rim (dies inside the rCut early-out), and thins at the very
+        float n1 = noise(pc * 1.25 + vec2(9.2, 2.6));      // banks
+        float n2 = noise(m2 * pc * 2.2 + vec2(4.4, 7.7));  // medium structure
+        float n3 = noise(m2 * pc * 4.0 + vec2(1.9, 5.3));  // internal mottle
+        // Soft threshold on low-frequency noise -> diffuse banks with
+        // feathered edges, sized so several land in the winding gaps.
+        float bank = smoothstep(-0.08, 0.80, n1 * 0.7 + n2 * 0.3);
+        // Disk envelope: STRICTLY inside the spiral -- fully faded before
+        // the outer winding, so the cloud silhouette follows the disk
+        // instead of scattering fog past the rim; thins at the very
         // center so the core glow stays clean.
-        float cEnv = smoothstep(2.0, 1.45, rc) * smoothstep(0.10, 0.40, rc);
+        float cEnv = smoothstep(1.55, 1.10, rc) * smoothstep(0.10, 0.40, rc);
         gas = uGasClouds * bank * (0.75 + 0.25 * n3) * cEnv * cloudVis
             * uHazePulse * 0.5;
     }

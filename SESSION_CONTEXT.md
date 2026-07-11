@@ -252,10 +252,13 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     its own rotation frame at 78 % of the spiral's angular speed
     (`rotate(pOval, 0.22·uRotSpeed·iTime)`) so the banks visibly drift
     relative to the arms; the dive's ramped clock accelerates both in
-    parallel. Pattern: three noise taps (banks 0.85 / structure m2·1.4 /
-    mottle m2·2.8), wide soft threshold `smoothstep(-0.05, 0.85, ...)`,
-    disk envelope `smoothstep(2.0, 1.45, r)·smoothstep(0.10, 0.40, r)`
-    (small rim overhang, inside the rCut early-out; clean center). Tinted
+    parallel. Pattern: three noise taps (banks 1.25 / structure m2·2.2 /
+    mottle m2·4.0), soft threshold `smoothstep(-0.08, 0.80, ...)`, disk
+    envelope `smoothstep(1.55, 1.10, r)·smoothstep(0.10, 0.40, r)` —
+    STRICTLY inside the spiral per user round 2 ("all over the place,
+    doesn't appear circular, don't need gases outside, banks too big"):
+    fully faded before the outer winding so the silhouette follows the
+    disk, no rim fog. Tinted
     per mode (uOuterHazeColor / uNormalHazeColor·0.85), added BEFORE the
     core mix so the hole punches through; rides uHazePulse for the
     come-alive beat. Fades out mid-dive, EARLIER than the main haze:
