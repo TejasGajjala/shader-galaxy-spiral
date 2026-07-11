@@ -219,3 +219,10 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     sub-quantization there) or above the horizon, output = bg stars +
     dither only — skips both smokeMaps and every star lattice. Radially
     coherent branch; measured ~26 % faster rest frame (SwiftShader).
+24. **Nebula occlusion of stars — tried and REVERTED** (`uNebulaDim`, stars
+    dimmed by local smoke density). User verdict: dimming stars is not an
+    option — it kills the sparkle and reads grayish. Constraint for any
+    future "more nebula definition" attempt: star brightness is
+    untouchable; work on the haze side instead (more smoke contrast/
+    brightness, dust-lane structure inside the SMOKE term, or color
+    separation between haze and stars).
