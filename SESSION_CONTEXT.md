@@ -226,3 +226,17 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     untouchable; work on the haze side instead (more smoke contrast/
     brightness, dust-lane structure inside the SMOKE term, or color
     separation between haze and stars).
+25. **Dust filament warp** (`uDustWarp`, "Dust filaments" slider 0–1.5,
+    default 0.6) — ported from the user's parallel `galaxy_shader_V2.0.glsl`
+    study (its domain-warped dust): two low-frequency noise taps shear the
+    dust-texture frame partly along the local orbital tangent, dragging
+    fbmdust/fbmdisk into wispy wave-like strands. The arm MASK and fbmabs
+    (core grain) stay unwarped, so the spiral skeleton and nucleus don't
+    move — only the smoke texture inside them wisps (haze-side answer to
+    item 24's constraint). Main smoke layer only (b glow layer unwarped);
+    cost = 2 noise taps inside the galaxy region, measured flat within
+    SwiftShader noise. Gated `smoothstep(0.1, 0.45, uZoom)` so the deep
+    dive isn't smeared into fingerprint whorls, and skipped entirely with
+    the haze gate. uDustWarp = 0 is bit-identical to the pre-port shader
+    (verified: 0 differing bytes vs HEAD screenshot). Subtle at 0.6;
+    pronounced waves at 1.2+.
