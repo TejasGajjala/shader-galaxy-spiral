@@ -608,13 +608,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // at every tilt, and the dive (shrinking uZoom = moving the camera in)
     // flies straight into the hole, not at some off-center patch of stars.
     // Closed-form ray/plane intersection, no marching. At uCamTilt = 0 this
-    // reduces EXACTLY to the old flat mapping p * 2 * uZoom.
+    // reduces EXACTLY to the flat mapping p * 1.65 * uZoom.
     //   camera pos (0, -D*st, D*ct), forward (0, st, -ct),
     //   right (1, 0, 0), up (0, ct, st), ray = forward + FOV*(sx,sy) basis.
     // FOV sets perspective strength (smaller = flatter, more telephoto);
     // D compensates so on-screen framing stays constant as FOV changes.
+    // The 1.65 framing constant (was 2.0) sits the galaxy ~20% closer,
+    // trimming the dead space around it at rest.
     const float FOV = 0.3;
-    float camD = 2.0 * uZoom / FOV;
+    float camD = 1.65 * uZoom / FOV;
     float ct = cos(uCamTilt);
     float st = sin(uCamTilt);
     float denom = ct - p.y * FOV * st;   // -(ray dir).z
@@ -652,6 +654,27 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Sampled pre-rotation so the background field stays fixed in place
     // while the spiral spins underneath it, instead of orbiting with it.
     vec2 pBg = p;
+
+    // Far-field early-out: beyond the galaxy's outermost contribution --
+    // and in the sky band past the horizon -- only the background stars
+    // and the dither can produce non-black output, so skip both smoke
+    // stacks and every star lattice. Every falloff (smoke exp(-r^2), the
+    // gaussian bulge, arm taper, corona, core glow) is sub-quantization
+    // past r = 2.5; the margin grows with uDiskThickness so off-plane
+    // floater sheets are never clipped. Radial branch = spatially
+    // coherent. Real savings: at rest tilt the sky band alone is a big
+    // slice of the frame.
+    float rCut = 2.5 + uDiskThickness * 0.25;
+    if (groundVis < 0.001 || dot(p, p) > rCut * rCut) {
+        float bgMaskFar = smoothstep(0.85, 1.7, length(pBg));
+        vec3 farCol = bgStarField(pBg) * bgMaskFar
+                    * mix(uNormalStarColor, uStarColor, uColorTransition);
+        farCol = pow(clamp(farCol, 0.0, 1.0), vec3(0.9));
+        farCol *= uFade;
+        farCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+        fragColor = vec4(farCol, 1.0);
+        return;
+    }
 
     // Ovalness frame (Sa/Sb), built BEFORE rotation so the ellipse's long
     // axis stays fixed horizontal on screen (like a projected disk) instead
@@ -1381,7 +1404,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Perspective compresses the far side more than the near side, so this
     // constant floor is an approximation (tuned via cos(tilt) as a stand-in
     // for the old uniform squash factor) rather than an exact per-pixel fit.
-    const pxSize = 4.0 * currentZoom * Math.max(
+    // 3.3 = 2 x the 1.65 framing constant (full vertical plane extent per
+    // canvas height), keeping the AA floor calibrated to the new framing.
+    const pxSize = 3.3 * currentZoom * Math.max(
       1.0 / gl.canvas.width,
       1.0 / (gl.canvas.height * Math.cos(currentTilt))
     );

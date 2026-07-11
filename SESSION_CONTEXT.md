@@ -211,3 +211,10 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     ramps `5× → ~20×` with depth (`× (1 + 3·(1−zoom)³)`, Kepler-flavored).
     shaderTime only drives the spin angle, so the ramp is safe; twinkle
     keeps its own wall clock.
+23. **Closer framing + far-field early-out** — framing constant 2.0 → 1.65
+    (`camD`; galaxy ~20 % closer at rest, trimming dead space; JS uPxSize
+    recalibrated 4.0 → 3.3 to match). New early-out right after the plane
+    hit: past `rCut = 2.5 + 0.25·uDiskThickness` (all body falloffs are
+    sub-quantization there) or above the horizon, output = bg stars +
+    dither only — skips both smokeMaps and every star lattice. Radially
+    coherent branch; measured ~26 % faster rest frame (SwiftShader).
