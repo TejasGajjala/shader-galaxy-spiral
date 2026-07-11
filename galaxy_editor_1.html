@@ -693,14 +693,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // linear, so vectors transform the same way as positions).
     vec2 parRot = rotate(parVec, ang);
 
-    // Haze extinction during the deep dive: untouched until ~1/3 zoom,
-    // then falls off steeply so the smoke is fully gone as the hole fills
-    // the view -- the reference ends black behind the star swarm, and the
-    // mid-dive flat gray wash disappears with it. Deliberately non-linear:
-    // rest and the early dive see exactly the old haze. Killing the haze
-    // also skips both smokeMap calls (the frame's heaviest work) late in
-    // the dive -- the deep zoom gets FASTER as it gets darker.
-    float hazeVis = smoothstep(0.04, 0.30, uZoom);
+    // Haze extinction during the deep dive: the smoke lingers around the
+    // viewer well into the zoom (full until zoom 0.18) and only then
+    // dissipates quickly, fully gone by 0.03 as the core takes over --
+    // the reference ends black behind the star swarm. Deliberately
+    // non-linear: rest and most of the dive see exactly the full haze.
+    // Killing the haze also skips both smokeMap calls (the frame's
+    // heaviest work) at the very end -- the deepest zoom gets FASTER as
+    // it gets darker.
+    float hazeVis = smoothstep(0.03, 0.18, uZoom);
     float hazeAmt = uHaze * hazeVis * uHazePulse;
     // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
     // independent, so hiding the haze leaves a clean starfield. Gate is on

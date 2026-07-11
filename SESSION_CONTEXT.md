@@ -133,11 +133,12 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
     (full haze × 2 smokeMaps + LOD cross-fade doubling all 8 sheet passes)
     — the dive was already heavy before flares. Biggest untapped mobile
     lever: drop canvas DPR during the dive (motion hides it).
-17. **Haze extinction in the deep dive** — `hazeVis = smoothstep(0.04, 0.30,
-    uZoom)` multiplying smoke/b/corona. Non-linear per user: haze untouched
-    until ~⅓ zoom, then dies fast as the hole fills the view; ends black
-    behind the star swarm like the reference. The gates also skip both
-    smokeMap calls late-dive, so the deepest frames get FASTER.
+17. **Haze extinction in the deep dive** — `hazeVis = smoothstep(0.03, 0.18,
+    uZoom)` multiplying smoke/b/corona (window deepened from (0.04, 0.30):
+    user wanted the haze to linger and surround the viewer well into the
+    zoom, then dissipate near the core). Ends black behind the star swarm
+    like the reference. The gates also skip both smokeMap calls at the very
+    end, so the deepest frames get FASTER.
 18. **Dive zoom curve — LINEAR** (final, user call). Smoothstep ease-in and
     quadratic ease-out were both tried and reverted. Instead the dive opens
     with item 20's haze pulse, then zooms linearly (5.5 s as always).
