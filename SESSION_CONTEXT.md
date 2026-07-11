@@ -157,10 +157,10 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 ## Current defaults (also the Reset state)
 
 ```
-uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 1.04
+uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uBulge 1.50
 uDiskThickness 0.00 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
-uStarDensity 3.00 · uMaxStarLod 2.0 · uTwinkleFraction 0.27 · uTwinkleSpeed 1.50
-uCoreMode 0 · uBlackHoleSize 0.039 · uCenterSpread 0.50
+uStarDensity 3.20 · uMaxStarLod 2.0 · uTwinkleFraction 0.14 · uTwinkleSpeed 0.00
+uCoreMode 0 · uBlackHoleSize 0.049 · uCenterSpread 0.50
 boom:   center (0.294,0.376,0.569) · arm (0,0.482,1) · haze (0.259,0.345,1) · star (1,1,1)
 normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1,1,1)
 ```
