@@ -252,13 +252,19 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     its own rotation frame at 78 % of the spiral's angular speed
     (`rotate(pOval, 0.22·uRotSpeed·iTime)`) so the banks visibly drift
     relative to the arms; the dive's ramped clock accelerates both in
-    parallel. Pattern: three noise taps (banks 1.25 / structure m2·2.2 /
-    mottle m2·4.0), soft threshold `smoothstep(-0.08, 0.80, ...)`, disk
-    envelope `smoothstep(1.55, 1.10, r)·smoothstep(0.10, 0.40, r)` —
-    STRICTLY inside the spiral per user round 2 ("all over the place,
-    doesn't appear circular, don't need gases outside, banks too big"):
-    fully faded before the outer winding so the silhouette follows the
-    disk, no rim fog. Tinted
+    parallel. Pattern (round 3, "flow with the windings"): the streaks
+    use the SAME log-spiral phase family as arm() — identical
+    theta/spacingWarp math, `band = smoothstep(-0.4, 0.85, sin(ph))` with
+    `ph = (theta(spacingWarp(r)) − t)·uArmCount + 1.6·nw` — so the clouds
+    run parallel to the actual windings. `nw` = average of two rotated
+    low-freq noise taps (single taps read as zigzag herringbone — the
+    sin-basis chevrons; averaging cancels them) and bends the edges into
+    long soft waves; a breakup threshold dissolves the coil into patches;
+    one fine mottle tap textures the inside. Disk envelope
+    `smoothstep(1.55, 1.10, r)·smoothstep(0.10, 0.40, r)` — STRICTLY
+    inside the spiral per round 2 ("all over the place, doesn't appear
+    circular, don't need gases outside"): fully faded before the outer
+    winding so the silhouette follows the disk, no rim fog. Tinted
     per mode (uOuterHazeColor / uNormalHazeColor·0.85), added BEFORE the
     core mix so the hole punches through; rides uHazePulse for the
     come-alive beat. Fades out mid-dive, EARLIER than the main haze:
