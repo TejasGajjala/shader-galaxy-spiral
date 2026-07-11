@@ -22,7 +22,13 @@
   #phone {
     position: sticky; top: 24px;
     flex: 0 0 auto;
-    width: 420px; height: 868px;
+    /* Fit the phone to the viewport height (24px breathing room top and
+       bottom), scaling down from the native 420x868 with the exact
+       aspect ratio preserved -- both dimensions derive from the same
+       min(), so the frame never distorts. The canvas tracks via its
+       ResizeObserver. */
+    width: min(420px, calc((100vh - 48px) * 420 / 868));
+    height: min(868px, calc(100vh - 48px));
     border-radius: 48px; border: 14px solid #1a1a2e; background: #000;
     box-shadow: 0 20px 60px rgba(0,0,0,0.5); overflow: hidden;
   }
