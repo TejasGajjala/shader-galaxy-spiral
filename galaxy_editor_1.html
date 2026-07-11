@@ -713,10 +713,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             if (aMask > 0.0005) {
                 starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi, ang, pxCtl) * 1.5);
             }
-            // Bulge sheet: exponential-disk falloff drives PRESENCE at the
-            // sheet footprint; 0.8x keeps the arms dominant (as before).
+            // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
+            // footprint -- near-flat over the core, collapsing hard with
+            // radius so the diffuse scatter stays concentrated instead of
+            // trailing far outside the disk; 0.8x keeps arms dominant.
             vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
-            float bKeep = min(uBulge * exp(-length(bRot) * 1.85), 1.0);
+            float bKeep = min(uBulge * exp(-dot(bRot, bRot) * 3.2), 1.0);
             if (bKeep > 0.003) {
                 starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl) * 1.5 * 0.8);
             }
@@ -732,7 +734,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // round dots. Bulge population shares the same lattice, so max()
         // never double-brightens a shared star.
         float starMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0);
-        float bulgeKeep = min(uBulge * exp(-length(p) * 1.85), 1.0);
+        // Gaussian PRESENCE falloff for the bulge/disk population:
+        // near-flat over the core (center density untouched), collapsing
+        // hard with radius so the scatter doesn't trail far outside the
+        // disk the way the old exponential tail did.
+        float bulgeKeep = min(uBulge * exp(-dot(p, p) * 3.2), 1.0);
         starsV = max(starMask * starField(p, 1.0, parRot, 0.0, 1.0, ang, pxCtl) * 1.5,
                      starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl) * 1.5 * 0.8);
     }

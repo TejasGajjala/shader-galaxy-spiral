@@ -32,8 +32,10 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 5. **Star size variance** — per-star `sizeMul = mix(0.5, 1.8, hs²)` (skewed small).
 6. **LOD refill cap** — `uMaxStarLod` (default 2.0): past that many grid doublings the
    field stops refining, so diving reads as flying PAST stars.
-7. **Stellar bulge + disk population** — `uBulge` (default 0.70). Exponential-disk
-   falloff `exp(-r · 1.85)` drives per-star PRESENCE (hash-gated count, not dimming);
+7. **Stellar bulge + disk population** — `uBulge` (default 0.70). Gaussian
+   falloff `exp(-r² · 3.2)` drives per-star PRESENCE (hash-gated count, not
+   dimming; was exponential `exp(-r·1.85)` — its long tail scattered stars
+   too far outside the disk, user call: near-flat core, hard radial cutoff);
    same lattice as arm stars (max() combine, no double-brightening); disk stars at
    0.8× arm brightness. Sizes/twinkle identical to arm stars.
 8. **Arm outer taper** — in `armAngleMask`: `radialFade *= exp(-max(r-1,0)² · 8)`.
