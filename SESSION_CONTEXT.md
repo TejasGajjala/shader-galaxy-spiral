@@ -219,3 +219,12 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     sub-quantization there) or above the horizon, output = bg stars +
     dither only — skips both smokeMaps and every star lattice. Radially
     coherent branch; measured ~26 % faster rest frame (SwiftShader).
+24. **Nebula occlusion of stars** — `uNebulaDim` slider "Nebula over stars"
+    (0–1, default 0.60; 0 = old additive look). `starsV *= 1 −
+    uNebulaDim·min(1.1·smoke, 1)`: dense smoke (arm ridges, core glow)
+    swallows the in-plane stars so the fbm cloud texture defines the
+    spiral instead of the particle carpet outshining it (problem surfaced
+    by the density-3.2/bulge-1.5 defaults). Scales with the smoke term
+    itself → vanishes with the haze (late-dive extinction, uHaze 0, pulse
+    dim). Floaters are max()-combined AFTER the occlusion — they hover
+    above the dust and stay bright.
