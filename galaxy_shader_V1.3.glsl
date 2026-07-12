@@ -624,15 +624,26 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float cloudVis = smoothstep(0.32, 0.55, uZoom);
     float gas = 0.0;
     if (uGasClouds > 0.001 && cloudVis > 0.001) {
-        // Differential rotation instead of a rigid offset spin: the lag
-        // off the spiral's speed is small ("gas trails very slightly")
-        // and GROWS with radius, so the field continuously shears and
-        // stretches along the flow -- outer gas visibly falls behind
-        // inner gas -- rather than turning as one solid sheet.
+        // Gas frame: a rigid slight lag (5% behind the spiral -- the gas
+        // visibly trails) plus a FIXED baked wind-up that combs the field
+        // along the flow. The wind-up is deliberately NOT multiplied by
+        // time: a time-growing differential shear winds the pattern
+        // tighter forever (after a couple of minutes the patches smeared
+        // into pure streamlines), whereas a constant one gives the
+        // half-caught-up look immediately and holds it -- the layer's
+        // character is now stationary no matter how long it idles. The
+        // living motion comes from the rigid lag and the wDrift morph
+        // below, both statistically stationary.
         float rc = length(pOval) + 1e-4;
-        float lag = 0.05 + 0.04 * smoothstep(0.2, 1.3, rc);
-        vec2 pc = rotate(pOval, lag * uRotSpeed * iTime);
-        float tC = atan(pc.y, pc.x);
+        float wind = 0.10 * smoothstep(0.2, 1.3, rc);
+        vec2 pc = rotate(pOval, 0.05 * uRotSpeed * iTime + wind);
+        // Band anchor: the streak CENTERLINES use the non-lagging frame,
+        // so the clouds stay locked mid-gap forever -- with the lag on
+        // this too they slowly migrated onto the windings (the "caught
+        // up speed" look after a minute). Only the texture inside the
+        // streaks (waves/mottle/breakup, sampled at the lagging pc)
+        // visibly trails the spiral.
+        float tC = atan(pOval.y, pOval.x);
         // Averaging two rotated low-frequency taps cancels the sin-basis
         // chevron ridges (raw noise() reads as zigzag herringbone at low
         // frequency) -> smooth, near-isotropic waves. The two taps crawl
