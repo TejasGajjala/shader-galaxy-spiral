@@ -40,16 +40,16 @@ reorder declarations there without rebuilding this table.
 | 7 | `uArmCount` | 2.0 | |
 | 8 | `uArmWinding` | 16.0 | |
 | 9 | `uArmSpacing` | 1.12 | |
-| 10 | `uHaze` | 0.80 | nebula body visibility |
-| 11 | `uBulge` | 1.5 | |
-| 12 | `uDiskThickness` | 0.0 | 0 = flat disk (cheapest path) |
+| 10 | `uHaze` | 0.84 | nebula body visibility |
+| 11 | `uBulge` | 0.5 | |
+| 12 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
 | 13 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
 | 14 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 15 | `uGasClouds` | 0.5 | drifting gas-cloud layer between windings |
+| 15 | `uGasClouds` | 0.23 | drifting gas-cloud layer between windings |
 | 16 | `uOvalness` | 1.0 | |
 | 17 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
 | 18 | `uCompactness` | 1.5 | |
-| 19 | `uStarDensity` | 3.2 | |
+| 19 | `uStarDensity` | 4.0 | |
 | 20 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
 | 21 | `uTwinkleFraction` | 0.14 | |
 | 22 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
