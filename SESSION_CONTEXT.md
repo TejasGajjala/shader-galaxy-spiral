@@ -248,11 +248,15 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     video's gauze): a sparse second layer of soft fog banks floating OVER
     the disk, deliberately NOT arm-masked, so the banks wash out over the
     star-packed arms but read clearly in the dark winding gaps — visibility
-    from placement, star brightness untouched (item 24 rule). Sampled in
-    its own rotation frame at 78 % of the spiral's angular speed
-    (`rotate(pOval, 0.22·uRotSpeed·iTime)`) so the banks visibly drift
-    relative to the arms; the dive's ramped clock accelerates both in
-    parallel. Pattern (round 3, "flow with the windings"): the streaks
+    from placement, star brightness untouched (item 24 rule). Motion
+    (round 4, "lag very slightly, fluid not rigid"): differential
+    rotation — `lag = 0.05 + 0.04·smoothstep(0.2, 1.3, r)` off the
+    spiral's speed, so outer gas falls behind inner gas and the field
+    continuously shears/stretches instead of turning as one sheet; plus
+    the two wave-field taps crawl in OPPOSITE directions
+    (`wDrift = vec2(0.0026, 0.0016)·iTime`), so the cloud shapes slowly
+    morph (cheap turbulence). The dive's ramped clock accelerates all of
+    it in parallel. Pattern (round 3, "flow with the windings"): the streaks
     use the SAME log-spiral phase family as arm() — identical
     theta/spacingWarp math, `band = smoothstep(-0.4, 0.85, sin(ph))` with
     `ph = (theta(spacingWarp(r)) − t)·uArmCount + 1.6·nw` — so the clouds
@@ -261,10 +265,10 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     sin-basis chevrons; averaging cancels them) and bends the edges into
     long soft waves; a breakup threshold dissolves the coil into patches;
     one fine mottle tap textures the inside. Disk envelope
-    `smoothstep(1.55, 1.10, r)·smoothstep(0.10, 0.40, r)` — STRICTLY
-    inside the spiral per round 2 ("all over the place, doesn't appear
-    circular, don't need gases outside"): fully faded before the outer
-    winding so the silhouette follows the disk, no rim fog. Tinted
+    `smoothstep(1.35, 0.95, r)·smoothstep(0.10, 0.40, r)` — offset well
+    INSIDE the spiral (rounds 2+4: "don't need gases outside; the beauty
+    of the tapered spiral end goes away"): the gas lives between the
+    windings and is fully gone before the outer arm taper. Tinted
     per mode (uOuterHazeColor / uNormalHazeColor·0.85), added BEFORE the
     core mix so the hole punches through; rides uHazePulse for the
     come-alive beat. Fades out mid-dive, EARLIER than the main haze:
