@@ -49,7 +49,7 @@ reorder declarations there without rebuilding this table.
 | 16 | `uOvalness` | 1.0 | |
 | 17 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
 | 18 | `uCompactness` | 1.5 | |
-| 19 | `uStarDensity` | 4.0 | |
+| 19 | `uStarDensity` | 3.0 | |
 | 20 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
 | 21 | `uTwinkleFraction` | 0.14 | |
 | 22 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
