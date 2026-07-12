@@ -182,7 +182,8 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
   by the dust field (reuses fbmdust, near-free).
 - Per-pixel AA footprint under perspective (`uPxSize` currently a cos(tilt)
   approximation; revisit only if far-side stars shimmer at high tilt).
-- **Final Flutter sync** of all changes when iteration is done.
+- ~~**Final Flutter sync** of all changes when iteration is done.~~ DONE —
+  see item 27.
 
 ## Dev environment notes
 
@@ -276,3 +277,19 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     while haze holds to 0.18); uniform gate skips everything when extinct
     or at 0 — bit-identical off (verified 0 differing bytes), perf flat
     within SwiftShader noise.
+27. **Flutter sync shipped** (user said the word). Three files, all
+    generated from the editor's shader body VERBATIM (extracted between
+    the `const shaderBody = \`` backticks — regenerate the same way after
+    any editor change):
+    - `galaxy_shader_V1.3.glsl` — replaces/renames V1.2; header + body,
+      Shadertoy-style (iResolution/iTime host-provided).
+    - `galaxy.frag` — Flutter FragmentProgram port: `#version 460 core`,
+      `#include <flutter/runtime_effect.glsl>`, declares iResolution +
+      iTime, body verbatim, `main()` flips fragCoord.y (body is y-up).
+      Validated with glslangValidator (include stubbed). 53 float slots.
+    - `FLUTTER_IMPLEMENTATION.md` — uniform float-index table (order =
+      declaration order in galaxy.frag; do not reorder), the two-clock
+      rule (iTime dive-accelerated vs uTwinkleTime wall), full dive
+      choreography as a Dart driver (pulse curve, linear zoom, hold,
+      fade-with-hidden-swaps), tilt-descent + uPxSize formulas, defaults
+      for both palettes, perf notes (DPR lever, uniform-gated features).
