@@ -227,23 +227,23 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     untouchable; work on the haze side instead (more smoke contrast/
     brightness, dust-lane structure inside the SMOKE term, or color
     separation between haze and stars).
-25. **Dust filament warp** (`uDustWarp`, "Dust filaments" slider 0–1.5,
-    default 0.6) — ported from the user's parallel `galaxy_shader_V2.0.glsl`
-    study (its domain-warped dust): two low-frequency noise taps shear the
-    dust-texture frame partly along the local orbital tangent, dragging
-    fbmdust/fbmdisk into wispy wave-like strands. The arm MASK and fbmabs
-    (core grain) stay unwarped, so the spiral skeleton and nucleus don't
-    move — only the smoke texture inside them wisps (haze-side answer to
-    item 24's constraint). Main smoke layer only (b glow layer unwarped);
-    cost = 2 noise taps inside the galaxy region, measured flat within
-    SwiftShader noise. Gated `smoothstep(0.1, 0.45, uZoom)` so the deep
-    dive isn't smeared into fingerprint whorls, and skipped entirely with
-    the haze gate. uDustWarp = 0 is bit-identical to the pre-port shader
-    (verified: 0 differing bytes vs HEAD screenshot). Subtle at 0.6;
-    pronounced waves at 1.2+. User verdict after trying it: still buried
-    under the stars, no noticeable difference — default set back to 0.0
-    (slider kept for now; remove in a cleanup pass if the gas clouds
-    prove to be the real answer).
+25. **Dust filament warp — REMOVED** (was `uDustWarp`, ported from the
+    V2.0 study's domain-warped dust). It sheared fbmdust/fbmdisk along the
+    orbital tangent into wispy strands, but the effect sat UNDER the
+    star-packed arms and read as no visible difference (that's what drove
+    the gas-cloud layer, item 26, as the over-the-disk alternative). Once
+    the gas clouds landed, the dust warp was dead weight, so the user had
+    it removed entirely (this pass): the `uDustWarp` uniform, its slider,
+    all JS wiring, and the warp block are gone; `smokeMap` is back to its
+    2-arg `(ps, pd)` form sampling the unwarped frame. Removal is
+    pixel-identical to the previous state (dust already defaulted to 0, and
+    0 was the unwarped math — verified 0 differing bytes). NOTE: this
+    dropped a float uniform from the middle of the list, so every Flutter
+    index after uHazePulse shifted down by one (total 53 → 52 floats); the
+    FLUTTER_IMPLEMENTATION.md table was regenerated and cross-checked
+    against galaxy.frag's actual declaration order. (The base `fbmdust`
+    noise and the "dust/disk" nebula texture are unrelated and untouched —
+    only the domain-WARP feature was removed.)
 26. **Gas clouds layer** (`uGasClouds`, "Gas clouds" slider 0–1, default
     0.5) — the working answer to "nebula masked by stars" (reference
     video's gauze): a sparse second layer of soft fog banks floating OVER

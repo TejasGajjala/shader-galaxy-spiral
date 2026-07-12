@@ -45,30 +45,29 @@ reorder declarations there without rebuilding this table.
 | 12 | `uDiskThickness` | 0.0 | 0 = flat disk (cheapest path) |
 | 13 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
 | 14 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 15 | `uDustWarp` | 0.0 | dust filament warp (off by default) |
-| 16 | `uGasClouds` | 0.5 | drifting gas-cloud layer between windings |
-| 17 | `uOvalness` | 1.0 | |
-| 18 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
-| 19 | `uCompactness` | 1.5 | |
-| 20 | `uStarDensity` | 3.2 | |
-| 21 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
-| 22 | `uTwinkleFraction` | 0.14 | |
-| 23 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
-| 24 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
-| 25 | `uPxSize` | computed | AA floor — §7 |
-| 26 | `uCoreMode` | 0.0 | 0 = black hole, 1 = white core |
-| 27 | `uBlackHoleSize` | 0.049 | |
-| 28–30 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
-| 31–33 | `uArmColor` | 0.0, 0.482, 1.0 | boom |
-| 34–36 | `uOuterHazeColor` | 0.259, 0.345, 1.0 | boom |
-| 37–39 | `uStarColor` | 1.0, 1.0, 1.0 | boom |
-| 40–42 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
-| 43–45 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
-| 46–48 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
-| 49–51 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
-| 52 | `uCenterSpread` | 0.5 | |
+| 15 | `uGasClouds` | 0.5 | drifting gas-cloud layer between windings |
+| 16 | `uOvalness` | 1.0 | |
+| 17 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
+| 18 | `uCompactness` | 1.5 | |
+| 19 | `uStarDensity` | 3.2 | |
+| 20 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
+| 21 | `uTwinkleFraction` | 0.14 | |
+| 22 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
+| 23 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
+| 24 | `uPxSize` | computed | AA floor — §7 |
+| 25 | `uCoreMode` | 0.0 | 0 = black hole, 1 = white core |
+| 26 | `uBlackHoleSize` | 0.049 | |
+| 27–29 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
+| 30–32 | `uArmColor` | 0.0, 0.482, 1.0 | boom |
+| 33–35 | `uOuterHazeColor` | 0.259, 0.345, 1.0 | boom |
+| 36–38 | `uStarColor` | 1.0, 1.0, 1.0 | boom |
+| 39–41 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
+| 42–44 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
+| 45–47 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
+| 48–50 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
+| 51 | `uCenterSpread` | 0.5 | |
 
-Total: 53 floats.
+Total: 52 floats.
 
 ## 3. Painting
 
@@ -221,8 +220,8 @@ the perspective foreshortening of the old squash factor.)
   (e.g. 2.0) — or drop DPR only while `diving` is true, when motion hides
   the softness. Keep `iResolution`/`uPxSize` in the same pixel space you
   actually render at.
-- Zero-value uniforms (`uDustWarp`, `uDiskThickness`, `uTwinkleSpeed`,
-  `uGasClouds`, …) cost nothing: their branches are uniform-coherent and
+- Zero-value uniforms (`uDiskThickness`, `uTwinkleSpeed`, `uGasClouds`, …)
+  cost nothing: their branches are uniform-coherent and
   fully skipped.
 
 ## 9. Palette / mode cheat sheet

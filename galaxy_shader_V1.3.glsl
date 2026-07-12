@@ -10,11 +10,10 @@
 // flares + bloom on the final dive stretch (uFlare), star LOD cap
 // (uMaxStarLod), per-pixel star footprints (perspective-correct sizing),
 // far-field early-out, gaussian bulge falloff, closer 1.65 framing,
-// dive "come alive" haze pulse (uHazePulse), domain-warped dust filaments
-// (uDustWarp), drifting gas-cloud layer with differential lag + turbulence
-// (uGasClouds), gaussian center tint (uCenterSpread), and split normal-mode
-// colors (uNormal*). Every new uniform's zero value restores the older
-// math where one existed.
+// dive "come alive" haze pulse (uHazePulse), drifting gas-cloud layer
+// with a gap-anchored shape (uGasClouds), gaussian center tint
+// (uCenterSpread), and split normal-mode colors (uNormal*). Every new
+// uniform's zero value restores the older math where one existed.
 //
 // Host-supplied globals (Shadertoy provides these automatically):
 //   iResolution (vec2 canvas pixels), iTime (rotation clock; the dive
@@ -51,11 +50,6 @@ uniform float uHazePulse;       // dive-start "come alive" beat, driven by
                                 // the host: the nebula dims and swells
                                 // back just before the zoom. 1.0 = neutral
                                 // (rest state and everywhere else).
-uniform float uDustWarp;        // domain-warp strength for the dust
-                                // filaments (ported from the V2.0 study):
-                                // shears the dust texture along the local
-                                // orbital tangent into wispy wave-like
-                                // strands. 0 = off, bit-identical.
 uniform float uGasClouds;       // gauzy fog banks floating OVER the disk,
                                 // scattered at random (not arm-masked), so
                                 // they read in the dark winding gaps where
@@ -435,13 +429,10 @@ float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
 // and pd drives the texture DETAIL (dust/disk noise) which stays round,
 // so ovalness never smears the grain like a stretched image. With
 // uOvalness = 1 both are identical.
-// pw is the (optionally domain-warped) frame for the dust/disk texture;
-// pass pw == pd for the plain unwarped body. fbmabs (core grain) always
-// samples the unwarped pd so the nucleus never smears.
-float smokeMap(vec2 ps, vec2 pd, vec2 pw){
+float smokeMap(vec2 ps, vec2 pd){
     float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
-    float d = fbmdust(pw);
-    float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pw));
+    float d = fbmdust(pd);
+    float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
     // Fixed central nebula glow (the old bulge, size baked in) so the haze
     // reads full at uHaze = 1. Not a separate control any more -- just part
     // of the nebula that uHaze scales as a whole.
@@ -591,25 +582,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // it gets darker.
     float hazeVis = smoothstep(0.03, 0.18, uZoom);
     float hazeAmt = uHaze * hazeVis * uHazePulse;
-    // Dust filament warp (ported from the V2.0 study): two low-frequency
-    // noise taps shear the dust frame partly along the local orbital
-    // tangent, dragging the texture into wispy wave-like strands the way
-    // differential rotation does. Main smoke layer only -- the b glow
-    // layer keeps the unwarped frame, so the cost (two noise taps) is
-    // paid once. Eases off in the deep dive so the magnified warp can't
-    // smear into fingerprint whorls.
-    vec2 pw = p;
-    if (hazeAmt > 0.001 && uDustWarp > 0.001) {
-        float w1 = noise(p * 1.6 + vec2(3.7, 1.2));
-        float w2 = noise(m2 * p * 1.6 + vec2(8.1, 4.9));
-        vec2 tang = vec2(-p.y, p.x) / max(length(p), 1e-4);
-        pw = p + uDustWarp * smoothstep(0.1, 0.45, uZoom)
-               * mix(vec2(w1, w2), tang * (w1 + w2) * 0.7, 0.5);
-    }
     // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
     // independent, so hiding the haze leaves a clean starfield. Gate is on
     // a uniform, so it's fully coherent -- no per-pixel divergence.
-    float smoke = hazeAmt > 0.001 ? hazeAmt * smokeMap(pOval, p, pw) : 0.0;
+    float smoke = hazeAmt > 0.001 ? hazeAmt * smokeMap(pOval, p) : 0.0;
     // Gas clouds: a sparse second layer of soft fog banks floating OVER
     // the disk (reference video: gauze drifting through the dark winding
     // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
@@ -741,7 +717,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float k  = uCompactness * smoke * groundVis;              // smoky spiral body
     float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
     float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
-    float b = (hazeAmt > 0.001 ? hazeAmt * 0.3 * smokeMap(pOval*m2, p*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
+    float b = (hazeAmt > 0.001 ? hazeAmt * 0.3 * smokeMap(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
 
     // Distant background field: a scatter of fixed floating stars, faded
     // in only beyond the galaxy body so it reads as depth behind the
