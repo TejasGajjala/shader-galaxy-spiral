@@ -250,16 +250,27 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
     the disk, deliberately NOT arm-masked, so the banks wash out over the
     star-packed arms but read clearly in the dark winding gaps — visibility
     from placement, star brightness untouched (item 24 rule). Motion
-    (round 4, "lag very slightly, fluid not rigid"): differential
-    rotation — `lag = 0.05 + 0.04·smoothstep(0.2, 1.3, r)` off the
-    spiral's speed, so outer gas falls behind inner gas and the field
-    continuously shears/stretches instead of turning as one sheet; plus
-    the two wave-field taps crawl in OPPOSITE directions
-    (`wDrift = vec2(0.0026, 0.0016)·iTime`), so the cloud shapes slowly
-    morph (cheap turbulence). The dive's ramped clock accelerates all of
-    it in parallel. Pattern (round 3, "flow with the windings"): the streaks
-    use the SAME log-spiral phase family as arm() — identical
-    theta/spacingWarp math, `band = smoothstep(-0.4, 0.85, sin(ph))` with
+    (round 5, "after a minute it looks caught up to speed — too much,
+    keep the look the same throughout"): round 4's differential rotation
+    used a lag that GREW LINEARLY WITH TIME with no ceiling
+    (`lag·uRotSpeed·iTime`, lag itself radius-dependent) — harmless-looking
+    for the first few seconds, but over a minute+ it keeps accumulating,
+    so inner and outer gas wind up at ever-larger relative angles and the
+    pattern visibly shears itself into a different, tighter-wound look the
+    longer the tab stays open. Fixed by splitting what the time-varying
+    term is allowed to touch: the streak BAND POSITIONS now sample
+    `atan(pOval.y, pOval.x)` directly — the un-lagged, non-accumulating
+    frame — so the bands stay locked in the winding gaps forever, no
+    matter the runtime. Only the WAVE TEXTURE inside the bands (nw/n2,
+    still sampled at a `pc` frame carrying a small constant angular
+    offset `wind = 0.10·smoothstep(0.2,1.3,r)` — fixed, not time-scaled —
+    plus a small rigid `0.05·uRotSpeed·iTime` lag and the counter-crawling
+    `wDrift` taps) keeps moving — turbulence/shimmer stay alive, but
+    bounded, since nothing left has an unbounded growth term. Verified: 3
+    minutes of fake-clock runtime, shape reads the same as at t=0.
+    Pattern (round 3, "flow with the windings"): the streaks use the SAME
+    log-spiral phase family as arm() — identical theta/spacingWarp math,
+    `band = smoothstep(-0.4, 0.85, sin(ph))` with
     `ph = (theta(spacingWarp(r)) − t)·uArmCount + 1.6·nw` — so the clouds
     run parallel to the actual windings. `nw` = average of two rotated
     low-freq noise taps (single taps read as zigzag herringbone — the
