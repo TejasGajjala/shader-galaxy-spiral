@@ -168,6 +168,15 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 
 ## Pending / agreed next steps (not yet implemented)
 
+- **Background starfield keep/remove — UNDER REVIEW.** Added an
+  editor-only `uBgStars` checkbox ("Background stars", default shown) to
+  A/B the sparse distant stars scattered OUTSIDE the disk (the ~15 specks
+  in the sky/sides). Uniform declared LAST in the shader block so it never
+  shifts the Flutter float-index layout, and it is NOT wired into
+  galaxy.frag / V1.3 / the index table. Once the user decides: keep -> drop
+  the toggle (bgStarField always on), or remove -> delete bgStarField and
+  both call sites. Do not sync deliverables until then.
+
 - **Late-dive star size tuning** (reference stars reach ~2 % screen width; we
   cap floaters at ~15 px — compare against the reference end frame).
 - (Flare streak/blob issues from the first cut are resolved via the

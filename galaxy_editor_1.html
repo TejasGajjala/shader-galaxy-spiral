@@ -219,6 +219,12 @@ uniform vec3 uNormalArmColor;
 uniform vec3 uNormalHazeColor;
 uniform vec3 uNormalStarColor;
 uniform float uCenterSpread;    // how far the center tint reaches (gaussian)
+uniform float uBgStars;         // EDITOR-ONLY experiment toggle: 1 = show the
+                                // sparse distant background starfield (behind
+                                // the galaxy, outside the disk), 0 = hide it.
+                                // Declared LAST so it never shifts the Flutter
+                                // float-index layout; drop it once the
+                                // keep/remove call is made.
 
 const mat2 m2 = mat2(0.8, 0.6, -0.6, 0.8);
 
@@ -673,7 +679,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float rCut = 2.5 + uDiskThickness * 0.25;
     if (groundVis < 0.001 || dot(p, p) > rCut * rCut) {
         float bgMaskFar = smoothstep(0.85, 1.7, length(pBg));
-        vec3 farCol = bgStarField(pBg) * bgMaskFar
+        vec3 farCol = (uBgStars > 0.5 ? bgStarField(pBg) * bgMaskFar : 0.0)
                     * mix(uNormalStarColor, uStarColor, uColorTransition);
         farCol = pow(clamp(farCol, 0.0, 1.0), vec3(0.9));
         farCol *= uFade;
@@ -850,7 +856,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // in only beyond the galaxy body so it reads as depth behind the
     // spiral rather than competing with it.
     float bgMask = smoothstep(0.85, 1.7, length(pBg));
-    float bgStars = bgStarField(pBg) * bgMask;
+    float bgStars = uBgStars > 0.5 ? bgStarField(pBg) * bgMask : 0.0;
 
     float dist = length(pOval); // structural radius: tints/glows follow the oval
     float rCore = length(p);    // true radius: the core itself stays round
@@ -967,13 +973,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread','uBgStars'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 16.0, armSpacing: 1.12,
     hazeAmount: 0.80, gasClouds: 0.20, bulgeAmount: 0.5, diskThickness: 1.35, starFlare: 0.6, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
     compactness: 1.5, starDensity: 3.29, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
-    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5,
+    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5, bgStars: 1,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
     star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
@@ -985,6 +991,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
   KEYS.forEach(k => state[k] = DEFAULTS[k]);
   state.coreMode = DEFAULTS.coreMode; // toggle, not a slider
+  state.bgStars = DEFAULTS.bgStars;   // editor-only experiment toggle
 
   const STRUCT = [
     { key: 'armCount',        label: 'Arm count',          min: 1,    max: 6,    step: 1,     fmt: v => v.toFixed(0) },
@@ -1064,6 +1071,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         if (!isFinite(v)) { errors.push(name); continue; }
         state.coreMode = v > 0.5 ? 1 : 0;
         count++;
+      } else if (name === 'uBgStars') {
+        const v = parseFloat(raw);
+        if (!isFinite(v)) { errors.push(name); continue; }
+        state.bgStars = v > 0.5 ? 1 : 0;
+        count++;
       } else if (UNIFORM_TO_KEY[name]) {
         const key = UNIFORM_TO_KEY[name];
         const v = parseFloat(raw);
@@ -1120,6 +1132,30 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     coreBtn.addEventListener('click', () => { state.coreMode = state.coreMode > 0.5 ? 0 : 1; updateCoreBtnLook(); sync(); });
     coreCard.appendChild(coreBtn);
     structEl.appendChild(coreCard);
+    // Background starfield show/hide (editor-only experiment). Checkbox
+    // because it's a true on/off, unlike the value sliders above.
+    const bgCard = document.createElement('div');
+    bgCard.className = 'card';
+    const bgLabel = document.createElement('label');
+    bgLabel.textContent = 'Background stars';
+    bgCard.appendChild(bgLabel);
+    const bgRow = document.createElement('div');
+    bgRow.className = 'row';
+    const bgChk = document.createElement('input');
+    bgChk.type = 'checkbox';
+    bgChk.checked = state.bgStars > 0.5;
+    bgChk.style.width = '18px'; bgChk.style.height = '18px'; bgChk.style.cursor = 'pointer';
+    const bgReadout = document.createElement('span');
+    bgReadout.className = 'readout';
+    bgReadout.textContent = state.bgStars > 0.5 ? 'shown' : 'hidden';
+    bgChk.addEventListener('change', () => {
+      state.bgStars = bgChk.checked ? 1 : 0;
+      bgReadout.textContent = bgChk.checked ? 'shown' : 'hidden';
+      sync();
+    });
+    bgRow.appendChild(bgChk); bgRow.appendChild(bgReadout);
+    bgCard.appendChild(bgRow);
+    structEl.appendChild(bgCard);
     buildColorControls();
   }
 
@@ -1173,7 +1209,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uNormalArmColor    = ' + fmtVec(state.normalArm) + ';',
       'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
       'uNormalStarColor   = ' + fmtVec(state.normalStar) + ';',
-      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';'
+      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';',
+      'uBgStars         = ' + (state.bgStars > 0.5 ? '1.0' : '0.0') + ';'
     ].join('\n');
   }
 
@@ -1205,6 +1242,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform3fv(U.uNormalHazeColor, state.normalHaze);
     gl.uniform3fv(U.uNormalStarColor, state.normalStar);
     gl.uniform1f(U.uCenterSpread, state.centerSpread);
+    gl.uniform1f(U.uBgStars, state.bgStars);
     // While the dive is paused the render loop skips drawing, so slider
     // edits would silently apply to the NEXT drawn frame only. Flag a
     // one-off repaint so tweaking values against a frozen mid-dive frame
@@ -1221,6 +1259,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // white core in boom), not a fixed default -- resetting sliders/colors
     // shouldn't silently flip the core away from the mode you're in.
     state.coreMode = colorTransition > 0.5 ? 1 : 0;
+    state.bgStars = DEFAULTS.bgStars;
     updateCoreBtnLook();
     buildControls(); sync();
     glslOut.blur(); // resetting is explicit intent to discard any pending edit
