@@ -369,3 +369,17 @@ transfer (all ALU, no textures):
       flat LOD-blend −31%, deep dive z0.02 −14%, **hold frame −70%**
       (hole covers the screen), thick rest −2% (thick sheets untouched
       by the merge — only the glow trim applies there).
+
+30. **Host frame pacing at rest documented** (option 3 of the perf
+    brainstorm) — FLUTTER_IMPLEMENTATION.md §8 now tells the app to paint
+    30 fps at rest / 60 fps while diving (rest motion is only the
+    0.05 rad/s spin; scheduling, not rendering — zero per-frame change).
+    Option 4 (collapse thick-path sheets where parallax is sub-pixel) was
+    investigated and REJECTED: at defaults the sheet offsets are ~5 px
+    (arms) / ~16 px (bulge) on screen — they ARE the visible 3D rim, and
+    they only grow in pixel terms during the dive (footprint shrinks with
+    zoom while parVec doesn't). Per-star offsets in one walk stay
+    impossible (offsets exceed the sub-cell clamp ~16×; the item-15 trap).
+    The ~100 ms thick-path cost is the price of the look, not waste.
+    Also fixed §9's palette index ranges, stale since the uDustWarp
+    removal renumbering (boom 27–38, normal 39–50).

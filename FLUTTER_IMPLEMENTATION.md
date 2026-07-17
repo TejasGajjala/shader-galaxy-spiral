@@ -220,6 +220,24 @@ the perspective foreshortening of the old squash factor.)
   (e.g. 2.0) — or drop DPR only while `diving` is true, when motion hides
   the softness. Keep `iResolution`/`uPxSize` in the same pixel space you
   actually render at.
+- **Halve the frame rate at rest.** At rest the only motion is the slow
+  0.05 rad/s rotation (twinkle speed defaults to 0), so consecutive 60 fps
+  frames are nearly identical — paint at 30 fps at rest and full 60 only
+  while `diving`. Halves average GPU load and battery with zero per-frame
+  quality change (this is scheduling, not rendering). The driver already
+  takes real `dt`, so skipped ticks accumulate correctly:
+
+  ```dart
+  // In the Ticker callback:
+  _tick++;
+  if (!driver.diving && _tick.isOdd) return;   // 30 fps at rest
+  driver.tick(dtSinceLastPaintedFrame);
+  repaint();
+  ```
+
+  Paint immediately on user interaction (slider edits, mode switches) so
+  controls never feel laggy, and drop the throttle the moment
+  `startDive()` runs — the pulse must land at full rate.
 - Zero-value uniforms (`uDiskThickness`, `uTwinkleSpeed`, `uGasClouds`, …)
   cost nothing: their branches are uniform-coherent and
   fully skipped.
@@ -227,9 +245,9 @@ the perspective foreshortening of the old squash factor.)
 ## 9. Palette / mode cheat sheet
 
 - **Normal mode**: `uColorTransition = 0`, `uCoreMode = 0` (black hole),
-  normal palette at indices 40–51.
+  normal palette at indices 39–50.
 - **Boom mode**: `uColorTransition = 1`, `uCoreMode = 1` (white core),
-  boom palette at indices 28–39.
+  boom palette at indices 27–38.
 - A dive **into** boom: start in normal, `startDive(toBoom: true)` — the
   palette and core swap happen automatically behind the fade. The editor's
   instant-mode buttons are just these same swaps without the dive.
