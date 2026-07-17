@@ -168,15 +168,6 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
 
 ## Pending / agreed next steps (not yet implemented)
 
-- **Background starfield keep/remove — UNDER REVIEW.** Added an
-  editor-only `uBgStars` checkbox ("Background stars", default shown) to
-  A/B the sparse distant stars scattered OUTSIDE the disk (the ~15 specks
-  in the sky/sides). Uniform declared LAST in the shader block so it never
-  shifts the Flutter float-index layout, and it is NOT wired into
-  galaxy.frag / V1.3 / the index table. Once the user decides: keep -> drop
-  the toggle (bgStarField always on), or remove -> delete bgStarField and
-  both call sites. Do not sync deliverables until then.
-
 - **Late-dive star size tuning** (reference stars reach ~2 % screen width; we
   cap floaters at ~15 px — compare against the reference end frame).
 - (Flare streak/blob issues from the first cut are resolved via the
@@ -313,3 +304,37 @@ normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1
       choreography as a Dart driver (pulse curve, linear zoom, hold,
       fade-with-hidden-swaps), tilt-descent + uPxSize formulas, defaults
       for both palettes, perf notes (DPR lever, uniform-gated features).
+28. **Background starfield — REMOVED** (`bgStarField`, the sparse ~15
+    distant stars scattered outside the disk). Reviewed via a temporary
+    editor-only `uBgStars` checkbox, then deleted at the user's call
+    ("not making a huge difference visually"): the function and BOTH call
+    sites (main path + far-field early-out, which now emits only dither)
+    are gone, along with the whole toggle scaffolding. The galaxy body is
+    pixel-identical (only the specks change; verified 177 differing bytes
+    vs the with-bg build). Surprisingly costly for its size — it ran a
+    3×3 hash lattice on EVERY pixel (sky and galaxy), so removing it saved
+    ~74 ms/rest-frame on SwiftShader (~15 %; far less absolute on a GPU
+    but still a real per-pixel win). No uniform was removed (it used the
+    shared uPxSize/uTwinkle*), so the Flutter float-index layout is
+    unchanged — deliverables re-synced, index table untouched, 52 floats.
+
+## Perf audit (SwiftShader, rest frame, marginal cost of each element)
+
+Ranked heaviest → lightest at the current defaults (disk thickness 1.35,
+so the thick star path is live). Absolute ms are software-raster; ratios
+transfer (all ALU, no textures):
+1. **3D disk thickness** ~100 ms — thick path evaluates arm+bulge stars
+   across 2 height sheets each + 2 floater sheets (~8-10 lattice passes
+   vs 2 flat).
+2. **Nebula smoke** (`uHaze`) ~99 ms — TWO smokeMap() calls/pixel (body +
+   b glow), each fbmdust(6)+fbmdisk(6)+fbmabs(8) noise taps + arm() math.
+3. **Bulge stars** (`uBulge`) ~33 ms.
+4. **Gas clouds** (`uGasClouds`) ~15 ms.
+5. **Star density** (`uStarDensity`) ~8 ms marginal.
+6. **Twinkle** ~6 ms.
+- Dive-only spike: **LOD cross-fade** (star refill ~zoom 0.6→0.25) is the
+  single most expensive frame — ~2× rest (doubles the star pass);
+  `uMaxStarLod` is the lever. Flares cost ~4 ms (negligible).
+- Levers if mobile struggles: DPR drop during the dive; lower
+  `uMaxStarLod`; flat disk (thickness 0) reclaims ~100 ms; the `b` glow
+  smoke layer is a candidate to cheapen (smoke is 2× smokeMap).

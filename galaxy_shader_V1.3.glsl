@@ -442,42 +442,6 @@ float smokeMap(vec2 ps, vec2 pd){
     return max(armTerm, glowTerm);
 }
 
-// A handful of floating background stars scattered across the whole frame,
-// independent of the spiral arms/density slider. Almost all grid cells are
-// empty (present threshold is high) so only a couple of stars show up per
-// screen, each twinkling on its own clock like a real distant star.
-float bgStarField(vec2 p) {
-    float GRID = 2.2;
-    float BASE_R = 0.007;
-    float radius = max(BASE_R, uPxSize * 1.2);
-    float atten = (BASE_R / radius) * (BASE_R / radius);
-    vec2 cell = floor(p * GRID);
-    float result = 0.0;
-
-    for (int dy = -1; dy <= 1; dy++) {
-        for (int dx = -1; dx <= 1; dx++) {
-            vec2 n = cell + vec2(float(dx), float(dy));
-
-            float present = step(0.93, hash1(n + vec2(91.7, 5.3)));
-            if (present < 0.5) continue;
-
-            float hx = hash1(n + vec2(7.0, 3.0));
-            float hy = hash1(n + vec2(31.41, 27.18) + 7.0);
-            vec2 starPos = (n + vec2(hx, hy)) / GRID;
-            float dist = length(p - starPos);
-
-            if (dist < radius) {
-                float brightness = pow(1.0 - dist / radius, 2.5) * atten;
-                float h = hash1(n + vec2(99.1, 23.7));
-                float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed * 0.5 + h * 100.0));
-                float twinkle = mix(0.15, 1.6, pulse);
-                result = max(result, brightness * twinkle);
-            }
-        }
-    }
-    return result;
-}
-
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 p = 2.0*fragCoord.xy/iResolution.xy - 1.0;
     p.x = -p.x;
@@ -545,13 +509,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // slice of the frame.
     float rCut = 2.5 + uDiskThickness * 0.25;
     if (groundVis < 0.001 || dot(p, p) > rCut * rCut) {
-        float bgMaskFar = smoothstep(0.85, 1.7, length(pBg));
-        vec3 farCol = bgStarField(pBg) * bgMaskFar
-                    * mix(uNormalStarColor, uStarColor, uColorTransition);
-        farCol = pow(clamp(farCol, 0.0, 1.0), vec3(0.9));
-        farCol *= uFade;
-        farCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
-        fragColor = vec4(farCol, 1.0);
+        // Beyond the galaxy body and above the horizon: empty sky. Only
+        // the dither remains, to kill 8-bit banding on the near-black
+        // gradient. (The sparse background starfield used to paint here;
+        // it was removed -- barely visible, and it cost a 3x3 lattice
+        // scan on every sky pixel.)
+        float farDither = (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+        fragColor = vec4(vec3(farDither), 1.0);
         return;
     }
 
@@ -719,11 +683,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
     float b = (hazeAmt > 0.001 ? hazeAmt * 0.3 * smokeMap(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
 
-    // Distant background field: a scatter of fixed floating stars, faded
-    // in only beyond the galaxy body so it reads as depth behind the
-    // spiral rather than competing with it.
-    float bgMask = smoothstep(0.85, 1.7, length(pBg));
-    float bgStars = bgStarField(pBg) * bgMask;
 
     float dist = length(pOval); // structural radius: tints/glows follow the oval
     float rCore = length(p);    // true radius: the core itself stays round
@@ -789,11 +748,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     boomLayer = mix(boomLayer, coreCol, coreMask);
     boomLayer += rim * rimAmt * vec3(0.9, 0.85, 1.0);
     boomLayer += coreGlow;
-
-    // Background field stars, added after the core so they never wash out
-    // the black hole/white core itself.
-    normalLayer += bgStars * uNormalStarColor;
-    boomLayer += bgStars * uStarColor;
 
     // --- MIX MODES ---
     vec3 finalCol = mix(normalLayer, boomLayer, uColorTransition);
