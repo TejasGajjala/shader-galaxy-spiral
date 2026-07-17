@@ -383,3 +383,20 @@ transfer (all ALU, no textures):
     The ~100 ms thick-path cost is the price of the look, not waste.
     Also fixed §9's palette index ranges, stale since the uDustWarp
     removal renumbering (boom 27–38, normal 39–50).
+
+31. **Ease-in-out zoom** (user: "starts slower, gets into a bit of speed,
+    then slows down again"). The dive zoom now blends a smoothstep S-curve
+    into the linear progress: `pz = p + (smoothstep(p) - p) * ZOOM_EASE`,
+    `currentZoom = 1 - pz`, with `ZOOM_EASE = 0.75` (one tunable constant
+    by the PULSE/duration block). Endpoints and the 5 s duration are
+    exactly preserved (p=0→zoom 1, p=1→zoom 0.0001); only the pacing
+    eases: ~0.25x velocity off the mark and into the finale, ~1.4x through
+    the middle (verified by sampling the profile — clean symmetric S).
+    Rotation ramp and tilt descent read currentZoom, so they breathe with
+    the same curve automatically. NOTE this supersedes the earlier
+    "keep it linear" call (old item 13 / the rejected curve) — but that
+    rejection was of an ASYMMETRIC ease (fast start, slow end); this is a
+    symmetric ease-in-out, a different shape the user asked for directly.
+    0 = linear if ever wanted back. Choreography-only (JS + the Dart
+    driver in FLUTTER_IMPLEMENTATION.md); shader body unchanged, so
+    galaxy.frag / V1.3 did not regenerate.

@@ -1414,6 +1414,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       const PULSE = 1000;
       const duration = 5000;
       const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+      // Zoom pacing: blend a smoothstep S-curve into the linear progress
+      // so the dive eases IN and OUT -- slow off the mark, quickest
+      // through the middle, easing again into the finale. 0 = the old
+      // linear zoom; 1 = full smoothstep (zero velocity at both ends,
+      // which reads as a stall against the pulse seam). 0.75 keeps a
+      // live 0.25x starting velocity (no dead spot after the pulse) while
+      // the middle runs ~1.4x. Total duration and endpoints unchanged.
+      const ZOOM_EASE = 0.75;
       if (elapsed < PULSE) {
         shaderTime += delta;
         const pp = elapsed / PULSE;
@@ -1434,8 +1442,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         const depth = 1.0 - currentZoom;
         shaderTime += delta * 5.0 * (1.0 + 3.0 * depth * depth * depth);
         const t = elapsed - PULSE;
-        // Linear zoom: eased curves read worse here.
-        currentZoom = Math.max(0.0001, 1.0 - t / duration);
+        // Ease-in-out zoom: blend the smoothstep S-curve into linear
+        // progress (see ZOOM_EASE). Endpoints are preserved exactly, so
+        // the 5 s duration and the zoom 1 -> 0 range are unchanged -- only
+        // the pacing within eases: slow start, faster middle, slow finale.
+        const p = t / duration;
+        const pz = p + (p * p * (3.0 - 2.0 * p) - p) * ZOOM_EASE;
+        currentZoom = Math.max(0.0001, 1.0 - pz);
         hazePulse = 1.0 + 0.25 * Math.max(0.0, 1.0 - t / 800); // settle the overshoot
         currentFade = 1.0;
       } else if (elapsed < PULSE + duration + 700) {

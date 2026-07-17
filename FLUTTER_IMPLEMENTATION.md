@@ -114,7 +114,7 @@ what makes the dive feel correct:
 One dive = four phases, timed from the tap (all ms):
 
 ```
-tap ──► PULSE 1000 ──► ZOOM 5000 (linear) ──► HOLD 700 ──► FADE 1500 ──► rest
+tap ──► PULSE 1000 ──► ZOOM 5000 (ease-in-out) ──► HOLD 700 ──► FADE 1500 ──► rest
 ```
 
 Reference driver, mirroring the editor's `frame()` exactly:
@@ -128,6 +128,7 @@ class GalaxyDriver {
   double _diveElapsedMs = 0, _target = 1;
 
   static const _pulse = 1000.0, _zoomMs = 5000.0, _hold = 700.0, _fade = 1500.0;
+  static const _zoomEase = 0.75; // ease-in-out strength; 0 = linear zoom
   static double _ss(double x) { x = x.clamp(0.0, 1.0); return x * x * (3 - 2 * x); }
 
   void startDive({required bool toBoom}) {
@@ -155,7 +156,14 @@ class GalaxyDriver {
       final depth = 1.0 - zoom;
       shaderTime += dt * 5.0 * (1.0 + 3.0 * depth * depth * depth);
       final t = e - _pulse;
-      zoom = (1.0 - t / _zoomMs).clamp(0.0001, 1.0);   // LINEAR - eased reads worse
+      // Ease-in-out: blend a smoothstep S-curve into linear progress so
+      // the dive starts slow, runs quickest through the middle, and eases
+      // into the finale. _zoomEase = 0 is the old linear zoom; 1 is full
+      // smoothstep (zero velocity at both ends -> reads as a stall). 0.75
+      // keeps a live starting velocity. Endpoints/duration unchanged.
+      final p = t / _zoomMs;
+      final pz = p + (p * p * (3.0 - 2.0 * p) - p) * _zoomEase;   // _zoomEase = 0.75
+      zoom = (1.0 - pz).clamp(0.0001, 1.0);
       hazePulse = 1.0 + 0.25 * (1.0 - t / 800).clamp(0.0, 1.0); // settle overshoot
       fade = 1;
     } else if (e < _pulse + _zoomMs + _hold) {
