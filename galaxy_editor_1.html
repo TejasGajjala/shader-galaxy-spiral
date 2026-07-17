@@ -991,13 +991,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     armCount: 2, armWinding: 16.0, armSpacing: 1.12,
     hazeAmount: 0.80, gasClouds: 0.20, bulgeAmount: 0.5, diskThickness: 1.35, starFlare: 0.6, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
     compactness: 1.5, starDensity: 3.29, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
-    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5,
+    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5, zoomEase: 0.75,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
     star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread'];
+  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -1022,7 +1022,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'twinkleFraction', label: 'Twinkle amount',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'twinkleSpeed',    label: 'Twinkle speed',      min: 0,    max: 8,    step: 0.05,  fmt: v => v.toFixed(2) },
     { key: 'blackHoleSize',   label: 'Black hole size',    min: 0.01, max: 0.2,  step: 0.001, fmt: v => v.toFixed(3) },
-    { key: 'centerSpread',    label: 'Center tint spread', min: 0.1,  max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) }
+    { key: 'centerSpread',    label: 'Center tint spread', min: 0.1,  max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
+    // Dive-animation param (JS choreography, NOT a shader uniform, so it
+    // doesn't appear in the Copy-GLSL block): 0 = linear zoom, 1 = full
+    // ease-in-out. 0.75 = slow start, fast middle, slow finale.
+    { key: 'zoomEase',        label: 'Zoom ease (dive)',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) }
   ];
   // One set of four pickers, bound to whichever mode is active: in normal
   // mode they edit the normal* palette, in boom mode the boom palette. Both
@@ -1421,7 +1425,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       // which reads as a stall against the pulse seam). 0.75 keeps a
       // live 0.25x starting velocity (no dead spot after the pulse) while
       // the middle runs ~1.4x. Total duration and endpoints unchanged.
-      const ZOOM_EASE = 0.75;
+      // Driven live by the "Zoom ease (dive)" slider (state.zoomEase).
+      const ZOOM_EASE = state.zoomEase;
       if (elapsed < PULSE) {
         shaderTime += delta;
         const pp = elapsed / PULSE;
