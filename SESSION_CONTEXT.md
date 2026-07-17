@@ -338,3 +338,34 @@ transfer (all ALU, no textures):
 - Levers if mobile struggles: DPR drop during the dive; lower
   `uMaxStarLod`; flat disk (thickness 0) reclaims ~100 ms; the `b` glow
   smoke layer is a candidate to cheapen (smoke is 2× smokeMap).
+
+29. **Perf pass: merged star populations + core-hole skip + glow trim**
+    (user-approved options 1/2/5 from the audit brainstorm; all verified
+    against the 8-state pixel-identity harness).
+    - *Merged star pass (flat path)*: `starFieldLevel`/`starField` now
+      return `vec2(.x = full population, .y = keep subset)` from ONE
+      lattice walk; the flat path combines them with the exact old
+      expressions `max(starMask*sf.x*1.5, sf.y*1.5*0.8)`. First attempt
+      folded the weights per star INSIDE the walk — bit-identical at rest
+      but NOT through the LOD cross-fade (`max(mix,mix) != mix(max,max)`
+      when the winning star switches levels; caught by the harness, max
+      delta 6/255). The vec2 form mixes each population across levels
+      independently, exactly like the old two passes: 0 differing bytes
+      on all 8 states. Sheet callers pass `wantAll = 0` and read `.y`
+      (old early-skip behavior, unchanged cost).
+    - *Core-hole early skip*: inside `length(p) <= uBlackHoleSize *
+      mix(0.45, 0.85, uCoreMode)` the CORE mix saturates at coreMask == 1
+      and discards every body term, so smoke/gas/stars are skipped
+      outright (`inHole`). Same `length(p)` expression the CORE section
+      feeds smoothstep, so the boundary pixel is identical.
+    - *Glow trim*: the `b` layer runs `smokeMapGlow` = smokeMap with
+      `fbmabsG` (6 octaves, was 8). The ridged fbmdust/fbmdisk stacks are
+      NOT reducible (dropping an octave moves ridge lines — measured up
+      to 32/255 at one octave off); fbmabs truncation only removes the
+      two finest terms (drift feedback is forward-only): measured max
+      delta 1 LSB, zero pixels above 1 LSB — below the shader's own
+      dither.
+    - Measured (SwiftShader, 480×1000, pinned zoom): flat rest −20%,
+      flat LOD-blend −31%, deep dive z0.02 −14%, **hold frame −70%**
+      (hole covers the screen), thick rest −2% (thick sheets untouched
+      by the merge — only the glow trim applies there).

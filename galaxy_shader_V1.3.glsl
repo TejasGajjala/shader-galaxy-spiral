@@ -190,20 +190,30 @@ float starFlare(vec2 d, float dist, float radius, float reach, float hs, float a
 // two sheets with (0, 0.5) and (0.5, 1) together contain EXACTLY the
 // original population -- density never changes, stars just get dealt out
 // across heights. The flat path passes (0, 1) = keep everything.
-float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl) {
+// Returns TWO fields from ONE lattice walk: .x = the full population
+// (every star), .y = the keep-hash subset. Populations that share the
+// same stars (arm mask + bulge in the flat path) get both maxes for the
+// price of one walk, and the caller weights/combines them with the SAME
+// expressions as the old two-pass code -- so the result is bit-identical,
+// including through the LOD cross-fade (each field mixes across levels
+// on its own, exactly as before; weighting after mixing). wantAll = 0.0
+// restores the old single-population behavior: skip non-kept stars
+// early (.x stays 0, unused) -- the cheap path for the sheet calls.
+vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll) {
     float GRID = (8.0 + 18.0 * uStarDensity) * lvlScale;
     // BASE_R is the nominal star size; each star scales it by a hashed
     // multiplier below so the field has small/large variety.
     float BASE_R = 0.009 / lvlScale;
     float pxFloor = uPxSize * 1.2;
     vec2 cell = floor(p * GRID);
-    float result = 0.0;
+    vec2 result = vec2(0.0);
 
     for (int dy = -1; dy <= 1; dy++) {
         for (int dx = -1; dx <= 1; dx++) {
             vec2 n = cell + vec2(float(dx), float(dy)) + vec2(seed * 57.0, seed * 113.0);
 
-            if (hash1(n + vec2(5.7, 113.1)) > keep) continue;
+            bool kept = hash1(n + vec2(5.7, 113.1)) <= keep;
+            if (!kept && wantAll < 0.5) continue;
 
             // Sheet-partition gate (skipped entirely on the flat path,
             // where partHi = 1 -- keeps thickness 0 at zero extra cost).
@@ -262,7 +272,9 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
                 float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
                 float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.z) * atten : 0.0;
                 if (core + flare > 0.0) {
-                    result = max(result, (core + flare) * starTwinkle(n));
+                    float bright = (core + flare) * starTwinkle(n);
+                    result.x = max(result.x, bright);
+                    if (kept) result.y = max(result.y, bright);
                 }
             }
         }
@@ -278,18 +290,22 @@ float starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec
 // spawns, so the existing stars keep growing/spreading as the dive
 // continues -- this is what actually reads as flying PAST stars, instead
 // of the field statistically refilling itself forever.
-float starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl) {
+// Returns vec2 like starFieldLevel: .x = full population, .y = keep
+// subset. Each component cross-fades between LOD levels on its own --
+// the same scalar mix the old per-population passes ran -- so weighting
+// and combining stay downstream and bit-identical.
+vec2 starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll) {
     float lod = min(max(0.0, log2(1.0 / max(uZoom, 0.0001))), uMaxStarLod);
     float l0 = floor(lod);
     float f = lod - l0;
     float s0 = exp2(l0);
-    float a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl);
+    vec2 a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll);
     // The cross-fade weight f derives purely from uZoom, so this branch is
     // fully coherent; at rest (f = 0) it skips the second lattice level
     // entirely, halving the star pass. mix(a, b, 0) == a, so no visual
     // change where it fires.
     if (f < 0.001) return a;
-    float b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl);
+    vec2 b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll);
     return mix(a, b, f);
 }
 
@@ -442,6 +458,38 @@ float smokeMap(vec2 ps, vec2 pd){
     return max(armTerm, glowTerm);
 }
 
+// Truncated fbmabs for the GLOW layer only: 6 octaves instead of 8. The
+// drift feedback (p -= ... * r) only affects LATER octaves, so truncation
+// removes exactly the two finest terms -- amplitude <= 1/64 + 1/128 at
+// 0.2 weight inside a layer scaled by another ~0.14, i.e. far below one
+// 8-bit step. The ridged fbmdust/fbmdisk stacks are NOT reducible this
+// way (dropping an octave moves their ridge lines; measured up to
+// 32/255) -- they stay at full octaves everywhere.
+float fbmabsG(vec2 p) {
+    float f = 1.0;
+    float r = 0.0;
+    for (int i = 0; i < 6; i++) {
+        r += abs(noise(p*f))/f;
+        f *= 2.0;
+        p -= vec2(-0.01, 0.08)*r;
+    }
+    return r;
+}
+
+// The secondary GLOW layer's own smoke: identical to smokeMap except the
+// fbmabs grain runs the truncated variant above -- the b layer lands in
+// the frame scaled by 0.3 x 0.6 (boom) / 0.13 (normal), so the finest
+// grain octaves sit below what 8-bit output can even represent.
+float smokeMapGlow(vec2 ps, vec2 pd){
+    float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
+    float d = fbmdust(pd);
+    float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
+    vec2 pe = ps; pe.y -= 0.2;
+    float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
+    float glowTerm = glow*(0.7+0.2*d+0.2*fbmabsG(pd));
+    return max(armTerm, glowTerm);
+}
+
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 p = 2.0*fragCoord.xy/iResolution.xy - 1.0;
     p.x = -p.x;
@@ -536,6 +584,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // linear, so vectors transform the same way as positions).
     vec2 parRot = rotate(parVec, ang);
 
+    // Inside the hole/core disc the CORE section's mix runs at exactly
+    // coreMask == 1 (its smoothstep saturates at the lower edge), which
+    // discards every body term computed before it. Skip them outright --
+    // smoke, gas clouds, stars -- so the deepest dive frames and the
+    // 0.7 s hold (hole covering much of the screen) get cheaper, bit for
+    // bit. rim/coreGlow are added AFTER the mix and stay live. Uses the
+    // same length(p) the CORE section feeds smoothstep, so the boundary
+    // pixel lands identically. Spatially coherent branch (a disc).
+    bool inHole = length(p) <= uBlackHoleSize * mix(0.45, 0.85, uCoreMode);
+
     // Haze extinction during the deep dive: the smoke lingers around the
     // viewer well into the zoom (full until zoom 0.18) and only then
     // dissipates quickly, fully gone by 0.03 as the core takes over --
@@ -549,7 +607,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
     // independent, so hiding the haze leaves a clean starfield. Gate is on
     // a uniform, so it's fully coherent -- no per-pixel divergence.
-    float smoke = hazeAmt > 0.001 ? hazeAmt * smokeMap(pOval, p) : 0.0;
+    float smoke = (hazeAmt > 0.001 && !inHole) ? hazeAmt * smokeMap(pOval, p) : 0.0;
     // Gas clouds: a sparse second layer of soft fog banks floating OVER
     // the disk (reference video: gauze drifting through the dark winding
     // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
@@ -563,7 +621,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // cheaper. Cost when on: one rotate + three noise taps.
     float cloudVis = smoothstep(0.32, 0.55, uZoom);
     float gas = 0.0;
-    if (uGasClouds > 0.001 && cloudVis > 0.001) {
+    if (uGasClouds > 0.001 && cloudVis > 0.001 && !inHole) {
         // Gas frame: a rigid slight lag (5% behind the spiral -- the gas
         // visibly trails) plus a FIXED baked wind-up that combs the field
         // along the flow. The wind-up is deliberately NOT multiplied by
@@ -624,7 +682,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the bulge gets ~3x the height (it's the puffy spheroid); the sparse
     // floater layer scatters furthest. All uniform-gated -- coherent.
     float starsV;
-    if (uDiskThickness > 0.001) {
+    if (inHole) {
+        starsV = 0.0;
+    } else if (uDiskThickness > 0.001) {
         float hDisk  = uDiskThickness * 0.008;  // arm slab half-height
         float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
         starsV = 0.0;
@@ -643,7 +703,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             // frame. Radially/arm-shaped regions, so the branch stays
             // spatially coherent.
             if (aMask > 0.0005) {
-                starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi, ang, pxCtl) * 1.5);
+                starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5);
             }
             // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
             // footprint -- near-flat over the core, collapsing hard with
@@ -652,7 +712,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
             float bKeep = min(uBulge * exp(-dot(bRot, bRot) * 3.2), 1.0);
             if (bKeep > 0.003) {
-                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl) * 1.5 * 0.8);
+                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5 * 0.8);
             }
         }
         // Floater sheets: sparse chunky strays at the largest heights --
@@ -671,8 +731,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // hard with radius so the scatter doesn't trail far outside the
         // disk the way the old exponential tail did.
         float bulgeKeep = min(uBulge * exp(-dot(p, p) * 3.2), 1.0);
-        starsV = max(starMask * starField(p, 1.0, parRot, 0.0, 1.0, ang, pxCtl) * 1.5,
-                     starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl) * 1.5 * 0.8);
+        // ONE lattice walk serves both populations (they share the same
+        // stars): .x is the full field the arm mask weights, .y is the
+        // bulgeKeep subset -- combined with the exact expressions the old
+        // two full passes used, at half the lattice work.
+        vec2 sf = starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl, 1.0);
+        starsV = max(starMask * sf.x * 1.5, sf.y * 1.5 * 0.8);
     }
 
     // groundVis gates every galaxy-body term so the region beyond the
@@ -681,7 +745,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float k  = uCompactness * smoke * groundVis;              // smoky spiral body
     float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
     float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
-    float b = (hazeAmt > 0.001 ? hazeAmt * 0.3 * smokeMap(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
+    float b = (hazeAmt > 0.001 && !inHole ? hazeAmt * 0.3 * smokeMapGlow(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
 
 
     float dist = length(pOval); // structural radius: tints/glows follow the oval
