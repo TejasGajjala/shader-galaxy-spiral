@@ -431,3 +431,15 @@ transfer (all ALU, no textures):
     (flattens the mid-dive LOD spike). Never dim stars. Also documented
     that haze-slider cost is per-layer on/off (post-multipliers; only
     exactly 0 trips the skip; ArmSmoke+CoreGlow share one gate).
+
+34. **Bulge concentrated at the center** (user + reference image: the core
+    cluster should be as packed as the arm roots, ours was an even wash).
+    Presence profile in BOTH star paths: `min(uBulge · 2.4 ·
+    exp(-r² · 7.0), 1.0)` (was `uBulge · exp(-r² · 3.2)`). The 2.4 gain
+    SATURATES keep to 1 near the center at the 0.5 default (fully packed
+    cluster; before, the center itself only kept 50 %), and the sharper
+    exponent kills the mid-disk tail (r = 0.7 scatter: 10 % → 4 %).
+    Semantics shift: uBulge now mostly grows the RADIUS of the saturated
+    cluster rather than the center density. Slightly faster too (bKeep
+    gate skips the bulge lattice over more of the disk). Deliverables
+    re-synced; no uniform/layout change.

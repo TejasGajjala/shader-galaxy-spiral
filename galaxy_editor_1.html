@@ -858,7 +858,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             // radius so the diffuse scatter stays concentrated instead of
             // trailing far outside the disk; 0.8x keeps arms dominant.
             vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
-            float bKeep = min(uBulge * exp(-dot(bRot, bRot) * 3.2), 1.0);
+            float bKeep = min(uBulge * 2.4 * exp(-dot(bRot, bRot) * 7.0), 1.0);
             if (bKeep > 0.003) {
                 starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5 * 0.8);
             }
@@ -874,11 +874,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // round dots. Bulge population shares the same lattice, so max()
         // never double-brightens a shared star.
         float starMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0);
-        // Gaussian PRESENCE falloff for the bulge/disk population:
-        // near-flat over the core (center density untouched), collapsing
-        // hard with radius so the scatter doesn't trail far outside the
-        // disk the way the old exponential tail did.
-        float bulgeKeep = min(uBulge * exp(-dot(p, p) * 3.2), 1.0);
+        // Gaussian PRESENCE falloff for the bulge/disk population,
+        // CONCENTRATED at the center (reference: the core cluster is as
+        // packed as the arm roots, and the between-arm sprinkle dies off
+        // quickly). The 2.4 gain saturates keep to 1 near the center at
+        // the default uBulge -- a fully-populated cluster -- and the
+        // sharper exponent (7.0, was 3.2) collapses the tail so bulge
+        // stars stop washing evenly across the mid-disk. uBulge now
+        // mostly grows the RADIUS of the saturated cluster.
+        float bulgeKeep = min(uBulge * 2.4 * exp(-dot(p, p) * 7.0), 1.0);
         // ONE lattice walk serves both populations (they share the same
         // stars): .x is the full field the arm mask weights, .y is the
         // bulgeKeep subset -- combined with the exact expressions the old

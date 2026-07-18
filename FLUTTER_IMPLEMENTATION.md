@@ -44,7 +44,7 @@ reorder declarations there without rebuilding this table.
 | 11 | `uCoreGlow` | 0.80 | haze: broad bright glow at the nucleus |
 | 12 | `uGlowLayer` | 0.80 | haze: soft diffuse secondary glow (b layer) |
 | 13 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
-| 14 | `uBulge` | 0.5 | |
+| 14 | `uBulge` | 0.5 | grows the radius of the packed central cluster |
 | 15 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
 | 16 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
 | 17 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
