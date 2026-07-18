@@ -158,7 +158,7 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 ## Current defaults (also the Reset state)
 
 ```
-uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uHaze 0.80 · uGasClouds 0.20 · uBulge 0.50
+uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uArmSmoke/uCoreGlow/uGlowLayer/uCorona 0.80 each · uGasClouds 0.20 · uBulge 0.50
 uDiskThickness 1.35 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
 uStarDensity 3.29 · uMaxStarLod 2.0 · uTwinkleFraction 0.14 · uTwinkleSpeed 0.00
 uCoreMode 0 · uBlackHoleSize 0.049 · uCenterSpread 0.50
@@ -400,3 +400,23 @@ transfer (all ALU, no textures):
     0 = linear if ever wanted back. Choreography-only (JS + the Dart
     driver in FLUTTER_IMPLEMENTATION.md); shader body unchanged, so
     galaxy.frag / V1.3 did not regenerate.
+
+32. **Nebula haze split into four sliders** (user request; central glow got
+    its own slider per user pick). `uHaze` is GONE, replaced by:
+    - `uArmSmoke`  — arm filament smoke (smokeMap .x)
+    - `uCoreGlow`  — broad nucleus haze (smokeMap .y; the old glowTerm)
+    - `uGlowLayer` — the soft secondary `b` layer (smokeMapGlow)
+    - `uCorona`    — tight core bloom (BOOM MODE ONLY, as it always was)
+    smokeMap now returns vec2(armTerm, glowTerm); mainImage combines
+    `hazeMod·max(uArmSmoke·x, uCoreGlow·y)` where `hazeMod = hazeVis ·
+    uHazePulse` (the shared dive extinction + pulse ride on ALL four).
+    All four default 0.80 == the old uHaze 0.80 look (verified: 8-state
+    harness 0 differing bytes except one ±1 LSB pixel from float
+    reassociation). Corona stayed boom-only after a both-modes attempt
+    washed the normal-mode dive finale (the visible zoom runs in normal
+    colors; at deep zoom exp(-25 r²) covers most of the screen — caught
+    by the harness, reverted). LAYOUT CHANGE: 1 float became 4 at index
+    10, so every Flutter index after uArmSpacing shifted +3 (52 → 55
+    floats); FLUTTER_IMPLEMENTATION.md table + prose regenerated and
+    cross-checked against galaxy.frag. Copy/apply block now carries the
+    four in place of uHaze.

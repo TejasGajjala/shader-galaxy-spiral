@@ -10,7 +10,9 @@
 // flares + bloom on the final dive stretch (uFlare), star LOD cap
 // (uMaxStarLod), per-pixel star footprints (perspective-correct sizing),
 // far-field early-out, gaussian bulge falloff, closer 1.65 framing,
-// dive "come alive" haze pulse (uHazePulse), drifting gas-cloud layer
+// dive "come alive" haze pulse (uHazePulse), nebula haze split into
+// four components (uArmSmoke/uCoreGlow/uGlowLayer/uCorona; the old
+// single uHaze == all four equal), drifting gas-cloud layer
 // with a gap-anchored shape (uGasClouds), gaussian center tint
 // (uCenterSpread), and split normal-mode colors (uNormal*). Every new
 // uniform's zero value restores the older math where one existed.
@@ -30,7 +32,13 @@ uniform float uArmWinding;
 uniform float uArmSpacing;      // radial spacing between arm turns without
                                 // changing how many there are; see spacingWarp().
                                 // >1 opens the center, <1 opens the rim. 1.0 = original.
-uniform float uHaze;            // nebula/smoke visibility; 0 = hidden
+// --- Nebula haze, split into four independently-scaled components (each
+// is amount x hazeMod x its own shape; 0 = that piece hidden). Stars are
+// separate. The old single uHaze == all four at the same value.
+uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
+uniform float uCoreGlow;        // broad bright haze at the nucleus
+uniform float uGlowLayer;       // soft diffuse secondary glow (the b layer)
+uniform float uCorona;          // tight bright bloom right at the core
 uniform float uBulge;           // stellar bulge strength; 0 = arms only
                                 // (clean starfield), 1 = full. Stars are
                                 // independent of this.
@@ -445,17 +453,20 @@ float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
 // and pd drives the texture DETAIL (dust/disk noise) which stays round,
 // so ovalness never smears the grain like a stretched image. With
 // uOvalness = 1 both are identical.
-float smokeMap(vec2 ps, vec2 pd){
+// Returns the two body components SEPARATELY so each gets its own slider:
+//   .x = arm smoke  (smoky filaments tracing the spiral arms)
+//   .y = core glow  (the broad bright haze at the nucleus the arms don't
+//                    reach -- the old central bulge glow)
+// mainImage scales each by its amount and max-combines them, so at equal
+// amounts the result is exactly the old max(armTerm, glowTerm).
+vec2 smokeMap(vec2 ps, vec2 pd){
     float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
     float d = fbmdust(pd);
     float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
-    // Fixed central nebula glow (the old bulge, size baked in) so the haze
-    // reads full at uHaze = 1. Not a separate control any more -- just part
-    // of the nebula that uHaze scales as a whole.
     vec2 pe = ps; pe.y -= 0.2;
     float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
     float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
-    return max(armTerm, glowTerm);
+    return vec2(armTerm, glowTerm);
 }
 
 // Truncated fbmabs for the GLOW layer only: 6 octaves instead of 8. The
@@ -603,11 +614,23 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // heaviest work) at the very end -- the deepest zoom gets FASTER as
     // it gets darker.
     float hazeVis = smoothstep(0.03, 0.18, uZoom);
-    float hazeAmt = uHaze * hazeVis * uHazePulse;
-    // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
-    // independent, so hiding the haze leaves a clean starfield. Gate is on
-    // a uniform, so it's fully coherent -- no per-pixel divergence.
-    float smoke = (hazeAmt > 0.001 && !inHole) ? hazeAmt * smokeMap(pOval, p) : 0.0;
+    // Shared dive modulation applied to EVERY haze component: the deep-dive
+    // extinction (hazeVis) and the come-alive pulse. The four amount
+    // sliders scale on top of this.
+    float hazeMod = hazeVis * uHazePulse;
+    // Main smoke body = arm smoke (.x) and core glow (.y), each on its own
+    // slider, then max-combined (equal amounts == the old body, bit for
+    // bit). Gates are on uniforms -> coherent; skips the heavy smokeMap
+    // when both are off, in the hole, or the haze is extinct deep in dive.
+    bool bodyOn = hazeMod > 0.001 && !inHole && (uArmSmoke > 0.001 || uCoreGlow > 0.001);
+    vec2 sm = bodyOn ? smokeMap(pOval, p) : vec2(0.0);
+    float smoke = hazeMod * max(uArmSmoke * sm.x, uCoreGlow * sm.y);
+    // Corona: tight central bloom, its own slider. BOOM MODE ONLY, as it
+    // always was -- the dive's visible zoom runs in normal colors (the
+    // palette swap hides behind the fade), and at deep zoom this exp
+    // covers most of the screen, so adding it to normal mode washes the
+    // whole finale in bloom. Cheap single exp, computed unconditionally.
+    float corona = uCorona * hazeMod * exp(-dot(pOval, pOval) * 25.0);
     // Gas clouds: a sparse second layer of soft fog banks floating OVER
     // the disk (reference video: gauze drifting through the dark winding
     // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
@@ -745,7 +768,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float k  = uCompactness * smoke * groundVis;              // smoky spiral body
     float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
     float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
-    float b = (hazeAmt > 0.001 && !inHole ? hazeAmt * 0.3 * smokeMapGlow(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
+    bool glowOn = hazeMod > 0.001 && !inHole && uGlowLayer > 0.001;
+    float b = (glowOn ? uGlowLayer * hazeMod * 0.3 * smokeMapGlow(pOval*m2, p*m2) : 0.0) * groundVis; // secondary nebula glow layer
 
 
     float dist = length(pOval); // structural radius: tints/glows follow the oval
@@ -766,9 +790,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
                    (uOuterHazeColor * (b * 0.6));
 
     vec3 boomLayer = clamp(boomCol, 0.0, 1.6);
-
-    float corona = exp(-dot(pOval,pOval)*25.0);
-    boomLayer += corona * uOuterHazeColor * hazeAmt;
+    boomLayer += corona * uOuterHazeColor;
 
     // --- COMPUTE NORMAL MODE ---
     // Exact decomposition of the original grayscale formula
