@@ -42,35 +42,36 @@ reorder declarations there without rebuilding this table.
 | 9 | `uArmSpacing` | 1.12 | |
 | 10 | `uArmSmoke` | 0.80 | haze: smoky filaments tracing the arms |
 | 11 | `uCoreGlow` | 0.80 | haze: broad bright glow at the nucleus |
-| 12 | `uGlowLayer` | 0.80 | haze: soft diffuse secondary glow (b layer) |
-| 13 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
-| 14 | `uBulge` | 0.5 | grows the radius of the packed central cluster |
-| 15 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
-| 16 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
-| 17 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 18 | `uGasClouds` | 0.20 | drifting gas-cloud layer between windings |
-| 19 | `uOvalness` | 1.0 | |
-| 20 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
-| 21 | `uCompactness` | 1.5 | |
-| 22 | `uStarDensity` | 3.29 | |
-| 23 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
-| 24 | `uTwinkleFraction` | 0.14 | |
-| 25 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
-| 26 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
-| 27 | `uPxSize` | computed | AA floor — §7 |
-| 28 | `uCoreMode` | 0.0 | 0 = black hole, 1 = white core |
-| 29 | `uBlackHoleSize` | 0.049 | |
-| 30–32 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
-| 33–35 | `uArmColor` | 0.0, 0.482, 1.0 | boom |
-| 36–38 | `uOuterHazeColor` | 0.259, 0.345, 1.0 | boom |
-| 39–41 | `uStarColor` | 1.0, 1.0, 1.0 | boom |
-| 42–44 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
-| 45–47 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
-| 48–50 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
-| 51–53 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
-| 54 | `uCenterSpread` | 0.5 | |
+| 12 | `uCoreGlowSpread` | 1.0 | core glow radial reach; intensity stays pinned |
+| 13 | `uGlowLayer` | 0.80 | haze: soft diffuse secondary glow (b layer) |
+| 14 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
+| 15 | `uBulge` | 0.5 | grows the radius of the packed central cluster |
+| 16 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
+| 17 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
+| 18 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
+| 19 | `uGasClouds` | 0.20 | drifting gas-cloud layer between windings |
+| 20 | `uOvalness` | 1.0 | |
+| 21 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
+| 22 | `uCompactness` | 1.5 | |
+| 23 | `uStarDensity` | 3.29 | |
+| 24 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
+| 25 | `uTwinkleFraction` | 0.14 | |
+| 26 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
+| 27 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
+| 28 | `uPxSize` | computed | AA floor — §7 |
+| 29 | `uCoreMode` | 0.0 | 0 = black hole, 1 = white core |
+| 30 | `uBlackHoleSize` | 0.049 | |
+| 31–33 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
+| 34–36 | `uArmColor` | 0.0, 0.482, 1.0 | boom |
+| 37–39 | `uOuterHazeColor` | 0.259, 0.345, 1.0 | boom |
+| 40–42 | `uStarColor` | 1.0, 1.0, 1.0 | boom |
+| 43–45 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
+| 46–48 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
+| 49–51 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
+| 52–54 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
+| 55 | `uCenterSpread` | 0.5 | |
 
-Total: 55 floats.
+Total: 56 floats.
 
 ## 3. Painting
 
@@ -87,7 +88,7 @@ class GalaxyPainter extends CustomPainter {
     // NOTE: if the canvas is NOT drawn at physical resolution (no
     // canvas.scale(1/dpr)), pass logical pixels instead - iResolution
     // must match the coordinate space FlutterFragCoord() reports in.
-    driver.upload(shader, w, h);   // sets all 55 floats
+    driver.upload(shader, w, h);   // sets all 56 floats
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
 
@@ -103,7 +104,7 @@ Drive repaints with a `Ticker`; feed its elapsed time to the driver.
 The shader takes **two independent time uniforms**. Getting these right is
 what makes the dive feel correct:
 
-- **`uTwinkleTime` (idx 26)** — plain wall-clock seconds. Always advances
+- **`uTwinkleTime` (idx 27)** — plain wall-clock seconds. Always advances
   at real time, even mid-dive.
 - **`iTime` (idx 2)** — the rotation clock (`shaderTime`). It advances at
   **1× wall time at rest**, and during the zoom phase of the dive it runs
@@ -199,7 +200,7 @@ double currentTilt() {
   final dp = (1.0 - zoom).clamp(0.0, 1.0);
   const e0 = 1.0 / 1024.0;                       // 2^-10
   final eased = (math.pow(2.0, 10.0 * (dp - 1.0)) - e0) / (1.0 - e0);
-  return camTiltSlider * (1.0 - 0.40 * eased);   // -> uCamTilt (idx 20)
+  return camTiltSlider * (1.0 - 0.40 * eased);   // -> uCamTilt (idx 21)
 }
 ```
 
@@ -285,9 +286,9 @@ DPR you actually render at (§7), and restore everything when
 ## 10. Palette / mode cheat sheet
 
 - **Normal mode**: `uColorTransition = 0`, `uCoreMode = 0` (black hole),
-  normal palette at indices 42–53.
+  normal palette at indices 43–54.
 - **Boom mode**: `uColorTransition = 1`, `uCoreMode = 1` (white core),
-  boom palette at indices 30–41.
+  boom palette at indices 31–42.
 - A dive **into** boom: start in normal, `startDive(toBoom: true)` — the
   palette and core swap happen automatically behind the fade. The editor's
   instant-mode buttons are just these same swaps without the dive.

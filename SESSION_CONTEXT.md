@@ -443,3 +443,14 @@ transfer (all ALU, no textures):
     cluster rather than the center density. Slightly faster too (bKeep
     gate skips the bulge lattice over more of the disk). Deliverables
     re-synced; no uniform/layout change.
+
+35. **Core glow spread control** (`uCoreGlowSpread`, "Core glow spread"
+    slider 0.4–2.0, default 1.0). Decouples the core glow's radial REACH
+    from its intensity: the spread divides both glow gaussians' exponents
+    (`gInv = 1/spread²`) so the falloff widens/tightens while the peaks —
+    and therefore the center brightness — stay pinned (a gaussian's peak
+    is independent of its width). Scoped to smokeMap's glowTerm only; the
+    secondary glow layer's own central blob is untouched. 1.0 is exactly
+    the multiplier 1 → bit-identical (verified 0 bytes across the 8-state
+    harness). LAYOUT: +1 float at index 12, everything after shifts
+    (55 → 56); table + prose regenerated and cross-checked.

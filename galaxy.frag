@@ -29,6 +29,12 @@ uniform float uArmSpacing;      // radial spacing between arm turns without
 // separate. The old single uHaze == all four at the same value.
 uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
 uniform float uCoreGlow;        // broad bright haze at the nucleus
+uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
+                                // center intensity pinned (gaussian width
+                                // scale; the peak of a gaussian is
+                                // independent of its width). 1.0 = the
+                                // original shape, <1 hugs the core,
+                                // >1 extends outward.
 uniform float uGlowLayer;       // soft diffuse secondary glow (the b layer)
 uniform float uCorona;          // tight bright bloom right at the core
 uniform float uBulge;           // stellar bulge strength; 0 = arms only
@@ -456,7 +462,11 @@ vec2 smokeMap(vec2 ps, vec2 pd){
     float d = fbmdust(pd);
     float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
     vec2 pe = ps; pe.y -= 0.2;
-    float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
+    // uCoreGlowSpread scales the WIDTH of both glow gaussians (dividing
+    // the exponent) with their peaks untouched -- reach and intensity are
+    // independent controls. At 1.0 the multiplier is exactly 1: identity.
+    float gInv = 1.0 / (uCoreGlowSpread * uCoreGlowSpread);
+    float glow = exp(-dot(ps,ps)*1.2*gInv) + 0.5*exp(-dot(pe,pe)*12.0*gInv);
     float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
     return vec2(armTerm, glowTerm);
 }
