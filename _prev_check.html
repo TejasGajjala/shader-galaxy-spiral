@@ -1,0 +1,1543 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Galaxy shader editor</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0d0d14; color: rgba(255,255,255,0.9);
+    font-family: system-ui, sans-serif;
+    padding: 24px 16px 60px;
+  }
+  /* Wide screens: phone pinned left, controls scroll independently to the
+     right so slider changes are visible next to the canvas without
+     scrolling away from it. Narrow screens: stacked, phone on top -- see
+     the max-width:900px override below. */
+  #layout {
+    display: flex; flex-direction: row; align-items: flex-start;
+    justify-content: center; gap: 32px; max-width: 1100px; margin: 0 auto;
+  }
+  #phone {
+    position: sticky; top: 24px;
+    flex: 0 0 auto;
+    /* Fit the phone to the viewport height (24px breathing room top and
+       bottom), scaling down from the native 420x868 with the exact
+       aspect ratio preserved -- both dimensions derive from the same
+       min(), so the frame never distorts. The canvas tracks via its
+       ResizeObserver. */
+    width: min(420px, calc((100vh - 48px) * 420 / 868));
+    height: min(868px, calc(100vh - 48px));
+    border-radius: 48px; border: 14px solid #1a1a2e; background: #000;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5); overflow: hidden;
+  }
+  @media (max-width: 900px) {
+    #layout { flex-direction: column; align-items: center; }
+    /* Stays "relative", not "static": boom/pause/mode buttons are
+       position:absolute against #phone, and "sticky" with no scroll
+       container above it behaves like static anyway once stacked. */
+    #phone { position: relative; top: auto; }
+  }
+  canvas { width: 100%; height: 100%; display: block; }
+  #boom-btn {
+    position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%);
+    padding: 9px 24px; border-radius: 6px; background: #7c6af7;
+    color: #fff; border: none; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 6px rgba(124, 106, 247, 0.3);
+  }
+  #boom-btn:hover { box-shadow: 0 3px 10px rgba(124, 106, 247, 0.4); }
+  #boom-btn:active { box-shadow: 0 1px 4px rgba(124, 106, 247, 0.2); }
+
+  #pause-btn {
+    position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%);
+    padding: 9px 24px; border-radius: 6px; background: #2a2a3e;
+    color: #fff; border: 1px solid rgba(255,255,255,0.25); font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all 0.15s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    display: none;
+  }
+  #pause-btn:hover { background: #34344a; }
+  #pause-btn:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+
+  .instant-row {
+    position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; gap: 6px;
+  }
+  .instant-row button {
+    padding: 6px 12px; border-radius: 5px; font-size: 10px; font-weight: 500;
+    cursor: pointer; border: none; transition: all 0.15s ease;
+    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .instant-row button:hover { background: rgba(255,255,255,0.12); }
+  .instant-row button:active { box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
+  #panel { width: 100%; max-width: 560px; margin-top: 20px; flex: 1 1 420px; min-width: 0; }
+  @media (min-width: 901px) { #panel { margin-top: 0; } }
+  .section-title { font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; }
+  .card { background: #181826; border-radius: 10px; padding: 10px 12px; }
+  .card label { display: block; font-size: 12px; color: rgba(255,255,255,0.6); margin-bottom: 6px; }
+  .row { display: flex; align-items: center; gap: 8px; }
+  input[type=range] { flex: 1; }
+  input[type=color] { width: 100%; height: 28px; border: 0.5px solid rgba(255,255,255,0.2); border-radius: 6px; background: none; cursor: pointer; }
+  .readout { font-size: 11px; color: rgba(255,255,255,0.5); min-width: 38px; text-align: right; }
+  #actions { display: flex; gap: 10px; margin-top: 16px; align-items: center; flex-wrap: wrap; }
+  #actions button {
+    font-size: 12px; font-weight: 500; padding: 8px 16px; border-radius: 6px;
+    background: #1f1f2e; color: rgba(255,255,255,0.95); border: 1px solid rgba(124, 106, 247, 0.3);
+    cursor: pointer; transition: all 0.2s ease; box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+  }
+  #actions button:hover {
+    background: #252535; border-color: rgba(124, 106, 247, 0.6);
+    box-shadow: 0 4px 10px rgba(124, 106, 247, 0.15);
+  }
+  #actions button:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+  #glsl-out { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; background: #181826; border-radius: 8px; border: 0.5px solid rgba(255,255,255,0.2); font-family: monospace; font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.85); white-space: pre; resize: vertical; box-sizing: border-box; height: 220px; }
+  #glsl-out:focus { outline: none; border-color: #7c6af7; }
+  #glsl-hint { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
+  .mode-btn { transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important; }
+  .mode-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.35) !important; }
+  .mode-btn:active { transform: translateY(0); box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important; }
+  .coreBtn { padding: 8px 16px !important; border-radius: 6px !important; font-size: 12px !important; font-weight: 500 !important;
+    background: #1f1f2e !important; color: rgba(255,255,255,0.95) !important;
+    border: 1px solid rgba(124, 106, 247, 0.3) !important; cursor: pointer !important;
+    transition: all 0.2s ease !important; box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important; }
+  .coreBtn:hover { background: #252535 !important; border-color: rgba(124, 106, 247, 0.6) !important;
+    box-shadow: 0 4px 10px rgba(124, 106, 247, 0.15) !important; }
+  .coreBtn:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important; }
+</style>
+</head>
+<body>
+<div id="layout">
+<div id="phone">
+  <canvas id="galaxy-canvas"></canvas>
+  <button id="boom-btn">Let's boom</button>
+  <button id="pause-btn">Pause</button>
+  <div class="instant-row">
+    <button id="mode-normal" class="mode-btn" style="background:#7c6af7;color:#fff;">Normal (instant)</button>
+    <button id="mode-boom" class="mode-btn" style="background:rgba(255,255,255,0.14);color:rgba(255,255,255,0.85);">Boom (instant)</button>
+  </div>
+</div>
+
+<div id="panel">
+  <div class="section-title">Spiral structure</div>
+  <div id="struct-controls" class="grid"></div>
+  <div class="section-title">Color</div>
+  <div id="color-controls" class="grid"></div>
+  <div id="actions">
+    <button id="reset-btn">Reset to defaults</button>
+    <button id="copy-btn">Copy GLSL values</button>
+    <button id="apply-btn">Apply edited values</button>
+    <span id="copy-status" style="font-size:12px;color:rgba(255,255,255,0.5);"></span>
+  </div>
+  <textarea id="glsl-out" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  <div id="glsl-hint">Edit or paste values above, then click "Apply edited values" (or press Ctrl/Cmd+Enter while focused) to update the sliders and render.</div>
+</div>
+</div>
+
+<script>
+(function() {
+  const canvas = document.getElementById('galaxy-canvas');
+  const gl = canvas.getContext('webgl');
+  if (!gl) { document.body.innerHTML = 'WebGL not supported'; return; }
+
+  // ============================================================
+  // Shader: user's sandbox version, verbatim, with one change:
+  // the hardcoded 0.02 rotation is now the uRotSpeed uniform.
+  // ============================================================
+  const shaderBody = `
+uniform float uZoom;
+uniform float uFade;
+uniform float uRotSpeed;
+
+// Sandbox controls
+uniform float uColorTransition;
+uniform float uArmCount;
+uniform float uArmWinding;
+uniform float uArmSpacing;      // radial spacing between arm turns without
+                                // changing how many there are; see spacingWarp().
+                                // >1 opens the center, <1 opens the rim. 1.0 = original.
+uniform float uHaze;            // nebula/smoke visibility; 0 = hidden
+uniform float uBulge;           // stellar bulge strength; 0 = arms only
+                                // (clean starfield), 1 = full. Stars are
+                                // independent of this.
+uniform float uDiskThickness;   // 0 = flat disk (exactly the old look).
+                                // >0 lifts stars off the plane: the main
+                                // field gets a sub-cell hashed height
+                                // scatter (fuzzy slab rim), plus a sparse
+                                // coarse lattice of real floaters that
+                                // slide with parallax during the dive.
+uniform float uFlare;           // 4-point diffraction spikes + soft bloom.
+                                // Alive ONLY in the dive's final stretch
+                                // (uZoom < 0.22, full by 0.07), on ALL
+                                // stars -- small crosses on the swarm,
+                                // big ones on the floaters. At rest and
+                                // mid-dive every star is a plain dot.
+uniform float uHazePulse;       // dive-start "come alive" beat, driven by
+                                // the host: the nebula dims and swells
+                                // back just before the zoom. 1.0 = neutral
+                                // (rest state and everywhere else).
+uniform float uGasClouds;       // gauzy fog banks floating OVER the disk,
+                                // scattered at random (not arm-masked), so
+                                // they read in the dark winding gaps where
+                                // nothing competes with them. Own rotation
+                                // frame slightly slower than the spiral =
+                                // visible relative drift. 0 = off.
+uniform float uOvalness;        // intrinsic elongation (Sa/Sb); see the
+                                // ovalness frames built in mainImage.
+                                // 1.0 = round (original).
+uniform float uCamTilt;         // camera tilt off top-down, radians (0 =
+                                 // straight overhead/flat; larger = more
+                                 // oblique). Replaces a uniform vertical
+                                 // squash with a real perspective plane
+                                 // projection -- near side (screen bottom)
+                                 // spreads out, far side (screen top)
+                                 // compresses toward a horizon, instead of
+                                 // uniformly scaling like a stretched image.
+uniform float uCompactness;
+uniform float uStarDensity;
+uniform float uMaxStarLod;      // caps starField() grid refill during the
+                                // dive; past this many doublings the
+                                // field stops refining, so stars grow and
+                                // spread instead of refilling forever
+uniform float uTwinkleFraction; // 0..1: fraction of stars that twinkle
+uniform float uTwinkleSpeed;    // pulse rate, independent of rotation
+uniform float uTwinkleTime;     // wall-clock time (not the scaled iTime)
+uniform float uPxSize;          // p-space size of one screen pixel (anti-alias)
+uniform float uCoreMode; // 0.0 = black hole, 1.0 = bright white core
+uniform float uBlackHoleSize;
+uniform vec3 uCenterColor;
+uniform vec3 uArmColor;
+uniform vec3 uOuterHazeColor;   // nebula glow (b layer + corona)
+uniform vec3 uStarColor;
+// Normal mode's palette: same four roles as boom's, driving an exact
+// decomposition of the original grayscale formula -- with all four left at
+// the same neutral gray the output is bit-identical to the old single-tint
+// look, and editing one recolors only that element (arms/center/haze/stars).
+uniform vec3 uNormalCenterColor;
+uniform vec3 uNormalArmColor;
+uniform vec3 uNormalHazeColor;
+uniform vec3 uNormalStarColor;
+uniform float uCenterSpread;    // how far the center tint reaches (gaussian)
+
+const mat2 m2 = mat2(0.8, 0.6, -0.6, 0.8);
+
+float noise(in vec2 p) {
+    float res = 0.0;
+    for (int i = 0; i < 4; i++) {
+        p = m2 * p * 2.0 + 0.6;
+        res += sin(p.x + sin(2.0 * p.y));
+    }
+    return res / 4.0;
+}
+
+float fbmabs(vec2 p) {
+    float f = 1.0;
+    float r = 0.0;
+    for (int i = 0; i < 8; i++) {
+        r += abs(noise(p*f))/f;
+        f *= 2.0;
+        p -= vec2(-0.01, 0.08)*r;
+    }
+    return r;
+}
+
+float hash1(vec2 p) {
+    p = fract(p * vec2(443.897, 441.423));
+    p += dot(p, p + 19.19);
+    return fract(p.x * p.y);
+}
+
+// Defined up here (not with the body helpers below) because the star
+// fields need it too: flare crosses are drawn screen-aligned, so each
+// star's delta gets un-rotated out of the spinning frame.
+vec2 rotate(in vec2 p, in float t){
+    return p * cos(-t) + vec2(p.y, -p.x) * sin(-t);
+}
+
+// Per-star twinkle: exactly uTwinkleFraction of stars pulse, each on its
+// own phase of the wall-clock uTwinkleTime, so rotation/dive speed never
+// affects the shimmer.
+float starTwinkle(vec2 n) {
+    float h = hash1(n + vec2(99.1, 23.7));
+    if (h > 1.0 - uTwinkleFraction) {
+        float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
+        return mix(0.05, 3.0, pulse);
+    }
+    return 1.0;
+}
+
+// --- Shared flare kit -------------------------------------------------
+// 4-point screen-aligned diffraction cross + soft bloom, per the
+// reference's END-of-dive frames: crosses belong to the close-up swarm,
+// so they only wake in the final stretch of the dive and every star is a
+// clean dot at rest / mid-dive.
+float flareRamp() {
+    return smoothstep(0.22, 0.07, uZoom);
+}
+// Spike half-length: grows with the star and the ramp, but capped in
+// SCREEN pixels (~52 px) via the PER-PIXEL footprint pxCtl.x -- the
+// global uPxSize is a worst-axis constant, and using it here let flares
+// balloon on the expanded near side of the tilted plane. Also capped
+// sub-cell so the 3x3 lattice lookup never clips a spike, and never
+// below the core radius (the disc must fit its own influence region).
+float flareReach(float radius, float cellCap, float pxL) {
+    float len = radius * mix(2.5, 7.0, flareRamp());
+    return max(radius, min(min(len, pxL * 52.0), cellCap));
+}
+// pxCtl.y fades flares out approaching the horizon band, where extreme
+// foreshortening stacks the spikes of many stars into vertical streaks.
+float starFlare(vec2 d, float dist, float radius, float reach, float hs, float ang, float fvis) {
+    vec2 du = rotate(d, -ang);       // screen-aligned, not galaxy-aligned
+    du.y *= cos(uCamTilt);           // approximate tilt foreshortening
+    float thin = radius * 0.22;
+    float sx = exp(-abs(du.y) / thin) * pow(max(0.0, 1.0 - abs(du.x) / reach), 2.0);
+    float sy = exp(-abs(du.x) / thin) * pow(max(0.0, 1.0 - abs(du.y) / reach), 2.0);
+    // Tight halo: at 2R the glow is already down to ~13%. A wider sigma
+    // barely decays inside the reach circle and smears every flared star
+    // into a fog blob -- the spikes, not the bloom, carry the look.
+    float bloom = exp(-(dist * dist) / (radius * radius * 2.0));
+    float amt = uFlare * flareRamp() * fvis * (0.45 + 0.55 * hs);
+    // Taper the whole flare to exactly zero at the reach boundary: the
+    // bloom is still above black there (badly so when the screen cap
+    // pins reach at ~2R on big stars), and truncating it mid-glow drew
+    // every flared star inside a visible clipped disc.
+    float edge = 1.0 - smoothstep(reach * 0.65, reach, dist);
+    return (0.5 * (sx + sy) + 0.25 * bloom) * amt * edge;
+}
+
+// One star grid at a given LOD scale. lvlScale multiplies the grid so
+// star spacing stays roughly constant on screen as the camera dives;
+// BASE_R shrinks by the same factor so star size tracks spacing.
+// keep = per-star presence probability (0..1): each star rolls its own
+// hash against it, so lowering keep THINS the population (fewer stars at
+// full brightness) instead of dimming every star. keep = 1.0 keeps all.
+// partLo/partHi split the population between height sheets: each star
+// rolls a dedicated hash and belongs to exactly one [lo, hi) bucket, so
+// two sheets with (0, 0.5) and (0.5, 1) together contain EXACTLY the
+// original population -- density never changes, stars just get dealt out
+// across heights. The flat path passes (0, 1) = keep everything.
+// Returns TWO fields from ONE lattice walk: .x = the full population
+// (every star), .y = the keep-hash subset. Populations that share the
+// same stars (arm mask + bulge in the flat path) get both maxes for the
+// price of one walk, and the caller weights/combines them with the SAME
+// expressions as the old two-pass code -- so the result is bit-identical,
+// including through the LOD cross-fade (each field mixes across levels
+// on its own, exactly as before; weighting after mixing). wantAll = 0.0
+// restores the old single-population behavior: skip non-kept stars
+// early (.x stays 0, unused) -- the cheap path for the sheet calls.
+vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll) {
+    float GRID = (8.0 + 18.0 * uStarDensity) * lvlScale;
+    // BASE_R is the nominal star size; each star scales it by a hashed
+    // multiplier below so the field has small/large variety.
+    float BASE_R = 0.009 / lvlScale;
+    float pxFloor = uPxSize * 1.2;
+    vec2 cell = floor(p * GRID);
+    vec2 result = vec2(0.0);
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            vec2 n = cell + vec2(float(dx), float(dy)) + vec2(seed * 57.0, seed * 113.0);
+
+            bool kept = hash1(n + vec2(5.7, 113.1)) <= keep;
+            if (!kept && wantAll < 0.5) continue;
+
+            // Sheet-partition gate (skipped entirely on the flat path,
+            // where partHi = 1 -- keeps thickness 0 at zero extra cost).
+            if (partHi < 1.0 || partLo > 0.0) {
+                float hp = hash1(n + vec2(43.1, 7.7));
+                if (hp < partLo || hp >= partHi) continue;
+            }
+
+            float hx = hash1(n);
+            float hy = hash1(n + vec2(31.41, 27.18));
+            vec2 starPos = (n - vec2(seed * 57.0, seed * 113.0) + vec2(hx, hy)) / GRID;
+
+            // Per-star size: hs^2 skews the distribution so most stars sit
+            // near the small end and only a few reach the large end --
+            // uniform sizes read as an artificial dot grid.
+            float hs = hash1(n + vec2(7.31, 41.7));
+            float sizeMul = mix(0.5, 1.8, hs * hs);
+            // Cell-size cap: above star density ~2.9 the largest stars
+            // would outgrow their lattice cell and clip at cell borders;
+            // a no-op at the old density range (identity preserved).
+            float starBase = min(BASE_R * sizeMul, 0.9 / GRID);
+            // Energy-conserving anti-aliasing: if the screen can't resolve
+            // this star (sub-pixel), draw it just large enough (~1.2 px)
+            // but dimmed by the area ratio, so it reads as the same small
+            // point of light -- no size inflation, no shimmer.
+            float radius = max(starBase, pxFloor);
+            float atten = (starBase / radius) * (starBase / radius);
+
+            // Slab fuzz: each star hovers a hashed hair off the plane, and
+            // parVec turns that height into its exact apparent shift in
+            // this pixel's plane frame. Clamped to stay sub-cell so the
+            // 3x3 lookup never clips a shifted star. Gated on the uniform
+            // (coherent branch): a flat disk skips the math entirely and
+            // renders the old look bit for bit.
+            vec2 hOff = vec2(0.0);
+            if (uDiskThickness > 0.001) {
+                float hh = (hash1(n + vec2(17.9, 61.3)) - 0.5) * 2.0;
+                // Fuzz saturates at thickness 1: this fine lattice has no
+                // sub-cell budget past that, so slider range above 1 goes
+                // entirely into the floaters (which do have headroom).
+                hOff = parVec * (hh * min(uDiskThickness, 1.0) * 0.004);
+                hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
+            }
+
+            vec2 d = p - starPos - hOff;
+            float dist = length(d);
+
+            // Flares wake only in the dive's final stretch, on a ~30%
+            // slice of SMALL stars: a small core with long thin spikes
+            // reads as a crisp +, while big cores hit the screen cap at
+            // ~2R with spike thickness scaling up (a fat diamond blob).
+            // Everything else keeps the plain disc and its exact old cost.
+            bool flaring = uFlare > 0.001 && uZoom < 0.22 && hs > 0.25 && hs < 0.55;
+            float reach = flaring ? flareReach(radius, 0.9 / GRID, pxCtl.x) : radius;
+            if (dist < reach) {
+                float core = dist < radius ? pow(1.0 - dist / radius, 2.5) * atten : 0.0;
+                float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.z) * atten : 0.0;
+                if (core + flare > 0.0) {
+                    float bright = (core + flare) * starTwinkle(n);
+                    result.x = max(result.x, bright);
+                    if (kept) result.y = max(result.y, bright);
+                }
+            }
+        }
+    }
+    return result;
+}
+
+// Zoom-adaptive starfield: as the camera dives (uZoom -> 0) blend between
+// successive power-of-two star grids, so on-screen star size and density
+// stay roughly constant -- flying THROUGH a starfield, not magnifying one.
+// At uZoom = 1 this is exactly one grid at the original scale.
+// Refill is capped at uMaxStarLod: past that many doublings, no finer grid
+// spawns, so the existing stars keep growing/spreading as the dive
+// continues -- this is what actually reads as flying PAST stars, instead
+// of the field statistically refilling itself forever.
+// Returns vec2 like starFieldLevel: .x = full population, .y = keep
+// subset. Each component cross-fades between LOD levels on its own --
+// the same scalar mix the old per-population passes ran -- so weighting
+// and combining stay downstream and bit-identical.
+vec2 starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll) {
+    float lod = min(max(0.0, log2(1.0 / max(uZoom, 0.0001))), uMaxStarLod);
+    float l0 = floor(lod);
+    float f = lod - l0;
+    float s0 = exp2(l0);
+    vec2 a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll);
+    // The cross-fade weight f derives purely from uZoom, so this branch is
+    // fully coherent; at rest (f = 0) it skips the second lattice level
+    // entirely, halving the star pass. mix(a, b, 0) == a, so no visual
+    // change where it fires.
+    if (f < 0.001) return a;
+    vec2 b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll);
+    return mix(a, b, f);
+}
+
+// One SHEET of off-plane floater stars: a coarse lattice living at a fixed
+// height hSheet above (or below) the galaxy plane. Instead of offsetting
+// each star from its footprint (which is limited to sub-cell shifts by the
+// 3x3 lookup), the WHOLE lattice is sampled in the sheet's exactly-shifted
+// frame ps = p - hSheet * parVec -- lookup and star positions stay
+// consistent, so the height can be arbitrarily large with zero clipping.
+// That is what lets high uDiskThickness values scatter stars visibly OFF
+// the disk silhouette (the still-frame-readable 3D cue) instead of
+// silently saturating a clamp. Per-star residual heights stay sub-cell.
+float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, vec2 pxMM) {
+    vec2 ps = p - parVec * hSheet;   // exact apparent frame of this sheet
+    // Presence follows the exponential disk profile of the FOOTPRINT, so
+    // floaters cluster over the galaxy even when their apparent position
+    // hovers far off the rim.
+    float keep = min(exp(-length(ps) * 1.1), 1.0);
+    // Denser grid costs nothing (the loop always checks 9 cells) but puts
+    // ~60 stars per sheet over the disk instead of ~10 -- enough that the
+    // ones landing OFF the silhouette read as a population, not strays.
+    float GRID = 5.0;
+    // Near main-star scale: floaters read through their parallax slide
+    // and the deep-dive size cap, not raw bulk -- oversizing them makes
+    // mid-dive floaters balloon (no LOD refill) into bright "pimples"
+    // against the refined swarm.
+    float BASE_R = 0.007;
+    vec2 cell = floor(ps * GRID);
+    float result = 0.0;
+
+    for (int dy = -1; dy <= 1; dy++) {
+        for (int dx = -1; dx <= 1; dx++) {
+            vec2 n = cell + vec2(float(dx), float(dy)) + vec2(seed * 61.0, seed * 23.0);
+
+            if (hash1(n + vec2(13.7, 57.3)) > keep) continue;
+
+            float hx = hash1(n + vec2(1.7, 9.2));
+            float hy = hash1(n + vec2(8.3, 2.6));
+            vec2 starPos = (n - vec2(seed * 61.0, seed * 23.0) + vec2(hx, hy)) / GRID;
+
+            // Per-star residual height so the sheet doesn't read as a
+            // rigid plane; kept sub-cell (0.45/GRID) so the 3x3 lookup in
+            // the sheet frame never clips.
+            float hh = (hash1(n + vec2(3.7, 91.3)) - 0.5) * 2.0;
+            vec2 hOff = parVec * (hh * min(abs(hSheet) * 0.5, 0.025));
+            hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
+
+            float hs = hash1(n + vec2(7.31, 41.7));
+            float starBase = BASE_R * mix(0.7, 1.4, hs * hs);
+            // Grow on screen as the dive closes in, but cap at ~15 px so
+            // a deep zoom never inflates a floater into a huge blob; the
+            // sub-pixel end keeps the same energy-conserving AA as the
+            // main field. Cap by the MIN-axis footprint (pxMM.x) so BOTH
+            // screen dimensions stay bounded -- a plane-space disc capped
+            // by the worst axis still stretched into a wide white oval on
+            // foreshortened regions. Floor by the MAX axis (pxMM.y) for
+            // resolvability; the max() keeps the clamp range valid where
+            // anisotropy is extreme.
+            float radius = clamp(starBase, pxMM.y * 1.2, max(pxMM.x * 15.0, pxMM.y * 1.2));
+            float atten = min(1.0, (starBase / radius) * (starBase / radius));
+
+            float dist = length(ps - starPos - hOff);
+
+            // Floaters never flare: big capped cores can only grow short
+            // thick spikes (diamond blobs, not + stars). They render as
+            // soft round bokeh discs -- exactly what the reference's
+            // biggest end-frame stars are; the crisp + crosses live on
+            // the small main-field stars instead.
+            if (dist < radius) {
+                float brightness = pow(1.0 - dist / radius, 2.5) * atten;
+                result = max(result, brightness * starTwinkle(n));
+            }
+        }
+    }
+    return result;
+}
+
+float fbmdisk(vec2 p) {
+    float f = 1.0;
+    float r = 0.0;
+    for (int i = 1; i < 7; i++) {
+        r += abs(noise(p*f))/f;
+        f += 1.0;
+    }
+    return 1.0/max(r, 0.0001);
+}
+
+float fbmdust(vec2 p) {
+    float f = 1.0;
+    float r = 0.0;
+    for (int i = 1; i < 7; i++) {
+        r += 1.0/max(abs(noise(p*f)), 0.0001)/f;
+        f += 1.0;
+    }
+    return pow(clamp(1.0 - 1.0/max(r, 0.0001), 0.0, 1.0), 4.0);
+}
+
+float theta(float r, float wb, float wn){
+    return atan(exp(1.0/r)/wb)*2.0*wn;
+}
+
+// Edge-anchored radius warp for the spiral PATTERN only. r = 1.5 (approx
+// disk edge, where exp(-r*r) has killed everything) maps to itself and the
+// center maps to the center, so theta sweeps the same total angle across
+// the disk -- the number of winds never changes, only where the turns sit.
+float spacingWarp(float r) {
+    return 1.5 * pow(r / 1.5, uArmSpacing);
+}
+
+float arm(float n, float aw, float wb, float wn, vec2 p){
+    float t = atan(p.y, p.x);
+    float r = length(p) + 1e-4;
+    float rw = spacingWarp(r);
+    return pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw) * exp(-r*r) * exp(-0.07/r);
+}
+
+float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
+    float t = atan(p.y, p.x);
+    float r = length(p) + 1e-4;
+    float rw = spacingWarp(r);
+    float angularFit = pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw);
+    float radialFade = exp(-r * 0.65) * exp(-0.07/r);
+    // Outer taper: past r = 1.0 the arms dissolve into the disk instead of
+    // trailing off as long solid ribbons. Exactly identity below r = 1.0 so
+    // the inner spiral is untouched; beyond it a quadratic-exponent cutoff
+    // collapses the tail, and since the star mask CUBES this value, the tail
+    // fragments into sparse dimming dots well before the mask hits zero.
+    float ex = max(r - 1.0, 0.0);
+    radialFade *= exp(-ex * ex * 8.0);
+    return angularFit * radialFade;
+}
+
+// Smoky galaxy body only: arms + dust + disk + a fixed central glow.
+// Stars are computed separately in mainImage so they can carry their own
+// color (uStarColor) instead of inheriting the smoke tint.
+// Takes two coordinates: ps drives the arm STRUCTURE (may be elliptical)
+// and pd drives the texture DETAIL (dust/disk noise) which stays round,
+// so ovalness never smears the grain like a stretched image. With
+// uOvalness = 1 both are identical.
+float smokeMap(vec2 ps, vec2 pd){
+    float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
+    float d = fbmdust(pd);
+    float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
+    // Fixed central nebula glow (the old bulge, size baked in) so the haze
+    // reads full at uHaze = 1. Not a separate control any more -- just part
+    // of the nebula that uHaze scales as a whole.
+    vec2 pe = ps; pe.y -= 0.2;
+    float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
+    float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
+    return max(armTerm, glowTerm);
+}
+
+// Truncated fbmabs for the GLOW layer only: 6 octaves instead of 8. The
+// drift feedback (p -= ... * r) only affects LATER octaves, so truncation
+// removes exactly the two finest terms -- amplitude <= 1/64 + 1/128 at
+// 0.2 weight inside a layer scaled by another ~0.14, i.e. far below one
+// 8-bit step. The ridged fbmdust/fbmdisk stacks are NOT reducible this
+// way (dropping an octave moves their ridge lines; measured up to
+// 32/255) -- they stay at full octaves everywhere.
+float fbmabsG(vec2 p) {
+    float f = 1.0;
+    float r = 0.0;
+    for (int i = 0; i < 6; i++) {
+        r += abs(noise(p*f))/f;
+        f *= 2.0;
+        p -= vec2(-0.01, 0.08)*r;
+    }
+    return r;
+}
+
+// The secondary GLOW layer's own smoke: identical to smokeMap except the
+// fbmabs grain runs the truncated variant above -- the b layer lands in
+// the frame scaled by 0.3 x 0.6 (boom) / 0.13 (normal), so the finest
+// grain octaves sit below what 8-bit output can even represent.
+float smokeMapGlow(vec2 ps, vec2 pd){
+    float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
+    float d = fbmdust(pd);
+    float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
+    vec2 pe = ps; pe.y -= 0.2;
+    float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
+    float glowTerm = glow*(0.7+0.2*d+0.2*fbmabsG(pd));
+    return max(armTerm, glowTerm);
+}
+
+void mainImage(out vec4 fragColor, in vec2 fragCoord) {
+    vec2 p = 2.0*fragCoord.xy/iResolution.xy - 1.0;
+    p.x = -p.x;
+    // Look-at perspective camera: the camera orbits the galaxy center at a
+    // uZoom-scaled distance, tilted uCamTilt off top-down, and always AIMS
+    // AT THE ORIGIN -- so the core/black hole stays pinned to screen center
+    // at every tilt, and the dive (shrinking uZoom = moving the camera in)
+    // flies straight into the hole, not at some off-center patch of stars.
+    // Closed-form ray/plane intersection, no marching. At uCamTilt = 0 this
+    // reduces EXACTLY to the flat mapping p * 1.65 * uZoom.
+    //   camera pos (0, -D*st, D*ct), forward (0, st, -ct),
+    //   right (1, 0, 0), up (0, ct, st), ray = forward + FOV*(sx,sy) basis.
+    // FOV sets perspective strength (smaller = flatter, more telephoto);
+    // D compensates so on-screen framing stays constant as FOV changes.
+    // The 1.65 framing constant (was 2.0) sits the galaxy ~20% closer,
+    // trimming the dead space around it at rest.
+    const float FOV = 0.3;
+    float camD = 1.65 * uZoom / FOV;
+    float ct = cos(uCamTilt);
+    float st = sin(uCamTilt);
+    float denom = ct - p.y * FOV * st;   // -(ray dir).z
+    // Rays with denom <= 0 point above the horizon and never hit the plane;
+    // fade the galaxy out approaching that boundary and floor the divisor
+    // so the fallback coordinate stays finite (no precision banding).
+    float groundVis = smoothstep(0.03, 0.12, denom);
+    float rayT = camD * ct / max(denom, 0.05);
+    // Height-parallax basis: a star floating h above the plane appears,
+    // in this pixel's z = 0 plane frame, shifted by exactly h * parVec
+    // (closed form from the same ray -- (d.x, d.y) / -d.z). Divisor
+    // floored like rayT's; the per-star sub-cell clamp in the star loops
+    // handles the near-horizon blowup. Built from SCREEN coords, so it
+    // must be computed before p is overwritten with the plane hit.
+    vec2 parVec = vec2(p.x * FOV, st + p.y * FOV * ct) / max(denom, 0.05);
+    // Per-pixel star sizing/flare controls. The LOCAL plane footprint of
+    // one screen pixel, both axes: horizontal is rayT-based, vertical
+    // differentiates the plane-hit y through rayT(sy) -- they follow the
+    // perspective, unlike the global uPxSize. Screen-pixel CAPS must use
+    // the MIN axis (x): stars/spikes are plane-space discs, so capping by
+    // the worst axis bounds only the compressed screen dimension and lets
+    // the other stretch to cap x (vFoot/hFoot) -- the "big white oval"
+    // bug on foreshortened regions. AA FLOORS use the MAX axis (y) so a
+    // star stays resolvable on its most compressed dimension.
+    // z = flare visibility, fading before the horizon band where
+    // foreshortening stacks many stars' spikes into vertical streaks.
+    float dRayT = camD * ct * FOV * st / (max(denom, 0.05) * max(denom, 0.05));
+    float hFoot = rayT * FOV * 2.0 / iResolution.x;
+    float vFoot = abs(dRayT * (st + p.y * FOV * ct) + rayT * FOV * ct) * 2.0 / iResolution.y;
+    vec3 pxCtl = vec3(min(hFoot, vFoot), max(hFoot, vFoot),
+                      smoothstep(0.10, 0.20, denom));
+    p = vec2(rayT * p.x * FOV,
+             -camD * st + rayT * (st + p.y * FOV * ct));
+
+    // Sampled pre-rotation so the background field stays fixed in place
+    // while the spiral spins underneath it, instead of orbiting with it.
+    vec2 pBg = p;
+
+    // Far-field early-out: beyond the galaxy's outermost contribution --
+    // and in the sky band past the horizon -- only the background stars
+    // and the dither can produce non-black output, so skip both smoke
+    // stacks and every star lattice. Every falloff (smoke exp(-r^2), the
+    // gaussian bulge, arm taper, corona, core glow) is sub-quantization
+    // past r = 2.5; the margin grows with uDiskThickness so off-plane
+    // floater sheets are never clipped. Radial branch = spatially
+    // coherent. Real savings: at rest tilt the sky band alone is a big
+    // slice of the frame.
+    float rCut = 2.5 + uDiskThickness * 0.25;
+    if (groundVis < 0.001 || dot(p, p) > rCut * rCut) {
+        // Beyond the galaxy body and above the horizon: empty sky. Only
+        // the dither remains, to kill 8-bit banding on the near-black
+        // gradient. (The sparse background starfield used to paint here;
+        // it was removed -- barely visible, and it cost a 3x3 lattice
+        // scan on every sky pixel.)
+        float farDither = (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+        fragColor = vec4(vec3(farDither), 1.0);
+        return;
+    }
+
+    // Ovalness frame (Sa/Sb), built BEFORE rotation so the ellipse's long
+    // axis stays fixed horizontal on screen (like a projected disk) instead
+    // of spinning with the arms; then rotated into the pattern frame so the
+    // spiral elongates naturally as it sweeps past the long axis. Structure
+    // only -- texture detail keeps sampling the round frame p, so nothing
+    // looks stretched. Warp is split evenly (sqrt on each axis) so
+    // uOvalness IS the resulting axis ratio.
+    float ovA = sqrt(uOvalness);          // arm frame: axis ratio = uOvalness
+    vec2 pO1 = vec2(p.x / ovA, p.y * ovA);
+
+    float ang = -uRotSpeed * iTime; // negative = clockwise spin
+    p = rotate(p, ang);
+    vec2 pOval = rotate(pO1, ang);
+    // Parallax basis carried into the spinning lattice frame (rotate is
+    // linear, so vectors transform the same way as positions).
+    vec2 parRot = rotate(parVec, ang);
+
+    // Inside the hole/core disc the CORE section's mix runs at exactly
+    // coreMask == 1 (its smoothstep saturates at the lower edge), which
+    // discards every body term computed before it. Skip them outright --
+    // smoke, gas clouds, stars -- so the deepest dive frames and the
+    // 0.7 s hold (hole covering much of the screen) get cheaper, bit for
+    // bit. rim/coreGlow are added AFTER the mix and stay live. Uses the
+    // same length(p) the CORE section feeds smoothstep, so the boundary
+    // pixel lands identically. Spatially coherent branch (a disc).
+    bool inHole = length(p) <= uBlackHoleSize * mix(0.45, 0.85, uCoreMode);
+
+    // Haze extinction during the deep dive: the smoke lingers around the
+    // viewer well into the zoom (full until zoom 0.18) and only then
+    // dissipates quickly, fully gone by 0.03 as the core takes over --
+    // the reference ends black behind the star swarm. Deliberately
+    // non-linear: rest and most of the dive see exactly the full haze.
+    // Killing the haze also skips both smokeMap calls (the frame's
+    // heaviest work) at the very end -- the deepest zoom gets FASTER as
+    // it gets darker.
+    float hazeVis = smoothstep(0.03, 0.18, uZoom);
+    float hazeAmt = uHaze * hazeVis * uHazePulse;
+    // uHaze scales the smoky nebula body (0 = hidden, 1 = full). Stars are
+    // independent, so hiding the haze leaves a clean starfield. Gate is on
+    // a uniform, so it's fully coherent -- no per-pixel divergence.
+    float smoke = (hazeAmt > 0.001 && !inHole) ? hazeAmt * smokeMap(pOval, p) : 0.0;
+    // Gas clouds: a sparse second layer of soft fog banks floating OVER
+    // the disk (reference video: gauze drifting through the dark winding
+    // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
+    // banks wash out, but in the gaps nothing competes with them, so the
+    // layer reads without touching star brightness (the item-24 rule).
+    // Sampled in its own rotation frame at 78% of the spiral's angular
+    // speed: the banks visibly slide relative to the arms, and the dive's
+    // ramped clock accelerates both together, keeping the drift parallel.
+    // Fades out mid-dive, earlier than the main haze; the uniform gate
+    // skips all of it once extinct or disabled, so the dive only gets
+    // cheaper. Cost when on: one rotate + three noise taps.
+    float cloudVis = smoothstep(0.32, 0.55, uZoom);
+    float gas = 0.0;
+    if (uGasClouds > 0.001 && cloudVis > 0.001 && !inHole) {
+        // Gas frame: a rigid slight lag (5% behind the spiral -- the gas
+        // visibly trails) plus a FIXED baked wind-up that combs the field
+        // along the flow. The wind-up is deliberately NOT multiplied by
+        // time: a time-growing differential shear winds the pattern
+        // tighter forever (after a couple of minutes the patches smeared
+        // into pure streamlines), whereas a constant one gives the
+        // half-caught-up look immediately and holds it -- the layer's
+        // character is now stationary no matter how long it idles. The
+        // living motion comes from the rigid lag and the wDrift morph
+        // below, both statistically stationary.
+        float rc = length(pOval) + 1e-4;
+        float wind = 0.10 * smoothstep(0.2, 1.3, rc);
+        vec2 pc = rotate(pOval, 0.05 * uRotSpeed * iTime + wind);
+        // Band anchor: the streak CENTERLINES use the non-lagging frame,
+        // so the clouds stay locked mid-gap forever -- with the lag on
+        // this too they slowly migrated onto the windings (the "caught
+        // up speed" look after a minute). Only the texture inside the
+        // streaks (waves/mottle/breakup, sampled at the lagging pc)
+        // visibly trails the spiral.
+        float tC = atan(pOval.y, pOval.x);
+        // Averaging two rotated low-frequency taps cancels the sin-basis
+        // chevron ridges (raw noise() reads as zigzag herringbone at low
+        // frequency) -> smooth, near-isotropic waves. The two taps crawl
+        // in OPPOSITE directions, so their sum doesn't just translate --
+        // the wave shapes themselves slowly morph: cheap turbulence.
+        vec2 wDrift = vec2(0.0026, 0.0016) * iTime;
+        float na = noise(pc * 0.8 + vec2(9.2, 2.6) + wDrift);
+        float nb = noise(m2 * pc * 0.8 + vec2(4.4, 7.7) - wDrift);
+        float nw = (na + nb) * 0.5;                        // wave field
+        float n2 = noise(m2 * pc * 3.2 + vec2(1.9, 5.3) + wDrift * 1.7);
+        // The streaks follow the SAME log-spiral phase family as arm() --
+        // identical theta/spacingWarp math, so the clouds run parallel to
+        // the actual windings instead of sitting across them (sin keeps
+        // it seam-free). The wave field bends the streak edges into long
+        // soft waves; the drifting pc frame slides the whole pattern
+        // along/through the gaps over time.
+        float ph = (theta(spacingWarp(rc), 0.7, uArmWinding) - tC) * uArmCount
+                 + 1.6 * nw;
+        float band = smoothstep(-0.4, 0.85, sin(ph));
+        // Along-spiral breakup: the coil dissolves into cloud patches
+        // instead of reading as one solid painted spiral.
+        float breakup = smoothstep(-0.40, 0.60, nw * 1.2 + n2 * 0.15);
+        // Disk envelope: offset well INSIDE the spiral -- the gas lives
+        // between the windings and is fully gone before the outer arm
+        // taper, so the tapered spiral ends stay clean and nothing
+        // stretches past the rim; thins at the very center so the core
+        // glow stays clean.
+        float cEnv = smoothstep(1.35, 0.95, rc) * smoothstep(0.10, 0.40, rc);
+        gas = uGasClouds * band * breakup * (0.85 + 0.15 * n2) * cEnv
+            * cloudVis * uHazePulse * 0.55;
+    }
+    // Stars. Flat path (uDiskThickness = 0): the original single-plane
+    // field, bit for bit, zero extra cost. Thick path: the SAME arm and
+    // bulge populations are dealt out across two exactly-shifted height
+    // sheets each (partition hash -- no density change), with the arm
+    // mask and disk falloff evaluated at every sheet's own FOOTPRINT so
+    // stars keep tracing the arms they belong to. Arms stay a thin slab;
+    // the bulge gets ~3x the height (it's the puffy spheroid); the sparse
+    // floater layer scatters furthest. All uniform-gated -- coherent.
+    float starsV;
+    if (inHole) {
+        starsV = 0.0;
+    } else if (uDiskThickness > 0.001) {
+        float hDisk  = uDiskThickness * 0.008;  // arm slab half-height
+        float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
+        starsV = 0.0;
+        for (int s = 0; s < 2; s++) {
+            float sgn = (s == 0) ? 1.0 : -1.0;
+            float lo  = (s == 0) ? 0.0 : 0.5;
+            float hi  = lo + 0.5;
+            // Arm sheet: footprint built in the unrotated frame (pBg) so
+            // the oval warp stays screen-aligned, then rotated like p.
+            vec2 aU = pBg - parVec * (sgn * hDisk);
+            vec2 aOval = rotate(vec2(aU.x / ovA, aU.y * ovA), ang);
+            vec2 aRot = rotate(aU, ang);
+            float aMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, aOval), 3.0);
+            // Skip the lattice wherever the mask/falloff already caps the
+            // contribution below the 1/255 dither floor -- most of the
+            // frame. Radially/arm-shaped regions, so the branch stays
+            // spatially coherent.
+            if (aMask > 0.0005) {
+                starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5);
+            }
+            // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
+            // footprint -- near-flat over the core, collapsing hard with
+            // radius so the diffuse scatter stays concentrated instead of
+            // trailing far outside the disk; 0.8x keeps arms dominant.
+            vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
+            float bKeep = min(uBulge * exp(-dot(bRot, bRot) * 3.2), 1.0);
+            if (bKeep > 0.003) {
+                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5 * 0.8);
+            }
+        }
+        // Floater sheets: sparse chunky strays at the largest heights --
+        // past ~2 on the slider they visibly detach from the silhouette.
+        float H = uDiskThickness * 0.05;
+        starsV = max(starsV, max(floaterSheet(p, parRot, H, 1.0, pxCtl.xy),
+                                 floaterSheet(p, parRot, -H, 2.0, pxCtl.xy)) * 1.25);
+    } else {
+        // Oval arm mask decides WHERE stars live; the round starField
+        // decides WHAT they look like -- stars trace the oval arms as
+        // round dots. Bulge population shares the same lattice, so max()
+        // never double-brightens a shared star.
+        float starMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0);
+        // Gaussian PRESENCE falloff for the bulge/disk population:
+        // near-flat over the core (center density untouched), collapsing
+        // hard with radius so the scatter doesn't trail far outside the
+        // disk the way the old exponential tail did.
+        float bulgeKeep = min(uBulge * exp(-dot(p, p) * 3.2), 1.0);
+        // ONE lattice walk serves both populations (they share the same
+        // stars): .x is the full field the arm mask weights, .y is the
+        // bulgeKeep subset -- combined with the exact expressions the old
+        // two full passes used, at half the lattice work.
+        vec2 sf = starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl, 1.0);
+        starsV = max(starMask * sf.x * 1.5, sf.y * 1.5 * 0.8);
+    }
+
+    // groundVis gates every galaxy-body term so the region beyond the
+    // horizon (see camDenom above) reads as clean black/background instead
+    // of the saturated fallback coordinate.
+    float k  = uCompactness * smoke * groundVis;              // smoky spiral body
+    float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
+    float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
+    float b = (hazeAmt > 0.001 && !inHole ? hazeAmt * 0.3 * smokeMapGlow(pOval*m2, p*m2) : 0.0) * groundVis; // pure nebula glow layer
+
+
+    float dist = length(pOval); // structural radius: tints/glows follow the oval
+    float rCore = length(p);    // true radius: the core itself stays round
+
+    // --- COMPUTE BOOM MODE ---
+    // Dual-tone spiral: the inner region takes uCenterColor and blends into
+    // uArmColor with radius, so the spiral body itself is two-toned. The
+    // soft secondary glow (the b layer) + corona are the nebula, tinted by
+    // uOuterHazeColor.
+    // Center tint fades out on a gaussian -- no visible edge, unlike a
+    // smoothstep band which reads as a drawn circle. uCenterSpread sets
+    // how far the tint reaches (weight = exp(-d^2/spread^2)).
+    float centerW = exp(-(dist * dist) / (uCenterSpread * uCenterSpread));
+    vec3 spiralHue = mix(uArmColor, uCenterColor, centerW);
+    vec3 boomCol = spiralHue * (k * 0.8 + k * k * 0.2) +
+                   uStarColor * starsB +
+                   (uOuterHazeColor * (b * 0.6));
+
+    vec3 boomLayer = clamp(boomCol, 0.0, 1.6);
+
+    float corona = exp(-dot(pOval,pOval)*25.0);
+    boomLayer += corona * uOuterHazeColor * hazeAmt;
+
+    // --- COMPUTE NORMAL MODE ---
+    // Exact decomposition of the original grayscale formula
+    //   lum = (0.2*kA^2 + 0.7*kA + 0.4*b) / 3,  kA = k + sV
+    // split by source: expanding kA^2 = k^2 + 2*k*sV + sV^2, the body keeps
+    // its own square, the star term absorbs the cross term (star-on-arm
+    // pixels lean toward the star color), and the glow layer stands alone.
+    // With all four normal colors equal the three terms sum back to exactly
+    // lum * tint -- the old look, bit for bit -- while different colors
+    // recolor only their own element.
+    vec3 nHue = mix(uNormalArmColor, uNormalCenterColor, centerW);
+    vec3 normalCol = nHue              * ((0.2 * k * k + 0.7 * k) / 3.0)
+                   + uNormalStarColor  * ((0.2 * (sV * sV + 2.0 * k * sV) + 0.7 * sV) / 3.0)
+                   + uNormalHazeColor  * (0.4 * b / 3.0);
+    vec3 normalLayer = clamp(normalCol, 0.0, 1.6);
+
+    // Gas-cloud gauze, tinted like the nebula in each mode. Added before
+    // the core mix so the hole / white core still punches through, and
+    // additively over the body so stars shine through the banks.
+    float gasG = gas * groundVis;
+    boomLayer   += uOuterHazeColor  * gasG;
+    normalLayer += uNormalHazeColor * gasG * 0.85;
+
+    // --- CORE (both modes): uCoreMode 0 = black hole, 1 = bright white core
+    // Black hole has no rim glow and a wide soft edge, so surrounding haze
+    // and stars feather gently into the void; white core keeps a tight edge.
+    float edgeIn  = mix(0.45, 0.85, uCoreMode);
+    float edgeOut = mix(1.60, 1.15, uCoreMode);
+    float coreMask = 1.0 - smoothstep(uBlackHoleSize*edgeIn, uBlackHoleSize*edgeOut, rCore);
+    vec3 coreCol = mix(vec3(0.0), vec3(1.05, 1.05, 1.12), uCoreMode);
+    float rim = exp(-pow((rCore - uBlackHoleSize*1.25)/(uBlackHoleSize*0.5), 2.0));
+    // rim glow only for the white core (its halo); zero in black-hole mode
+    float rimAmt = uCoreMode * 0.30;
+    // extra bloom around the white core so it reads as glowing, not flat
+    float coreGlow = uCoreMode * exp(-dot(p,p) / (uBlackHoleSize*uBlackHoleSize) * 1.5) * 0.35;
+
+    normalLayer = mix(normalLayer, coreCol, coreMask);
+    normalLayer += rim * rimAmt * uNormalStarColor;
+    normalLayer += coreGlow;
+
+    boomLayer = mix(boomLayer, coreCol, coreMask);
+    boomLayer += rim * rimAmt * vec3(0.9, 0.85, 1.0);
+    boomLayer += coreGlow;
+
+    // --- MIX MODES ---
+    vec3 finalCol = mix(normalLayer, boomLayer, uColorTransition);
+
+    finalCol = pow(clamp(finalCol, 0.0, 1.0), vec3(0.9));
+    finalCol *= uFade;
+
+    // Sub-quantization dither: the haze's exponential tail falls below
+    // 1/255 along a smooth contour, and without this the 8-bit output
+    // truncates it to black there -- a visible oval terminator around the
+    // galaxy. Half a bit of static per-pixel noise breaks that band edge
+    // up, so the haze keeps fading perceptually all the way into space.
+    finalCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+
+    fragColor = vec4(finalCol, 1.0);
+}
+`;
+
+  const fragSource = 'precision highp float;\nuniform vec2 iResolution;\nuniform float iTime;\n' + shaderBody + '\nvoid main() {\n  mainImage(gl_FragColor, gl_FragCoord.xy);\n}\n';
+  const vertSource = 'attribute vec2 position;\nvoid main() {\n  gl_Position = vec4(position, 0.0, 1.0);\n}';
+
+  function compile(type, src) {
+    const s = gl.createShader(type);
+    gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(s)); return null; }
+    return s;
+  }
+  const vsh = compile(gl.VERTEX_SHADER, vertSource);
+  const fsh = compile(gl.FRAGMENT_SHADER, fragSource);
+  if (!vsh || !fsh) { return; }
+  const program = gl.createProgram();
+  gl.attachShader(program, vsh);
+  gl.attachShader(program, fsh);
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(program)); return; }
+  gl.useProgram(program);
+
+  const vertices = new Float32Array([-1,-1, 1,-1, -1,1, -1,1, 1,-1, 1,1]);
+  const buffer = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+  const posLoc = gl.getAttribLocation(program, 'position');
+  gl.enableVertexAttribArray(posLoc);
+  gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
+
+  const U = {};
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uHaze','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+
+  const DEFAULTS = {
+    armCount: 2, armWinding: 16.0, armSpacing: 1.12,
+    hazeAmount: 0.80, gasClouds: 0.20, bulgeAmount: 0.5, diskThickness: 1.35, starFlare: 0.6, ovalness: 1.0, camTilt: 1.27, rotSpeed: 0.05,
+    compactness: 1.5, starDensity: 3.29, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
+    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5, zoomEase: 0.75,
+    center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
+    star: [1.0, 1.0, 1.0],
+    normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
+    normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
+  };
+  const KEYS = ['armCount','armWinding','armSpacing','hazeAmount','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
+  const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
+  const state = {};
+  COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
+  KEYS.forEach(k => state[k] = DEFAULTS[k]);
+  state.coreMode = DEFAULTS.coreMode; // toggle, not a slider
+
+  const STRUCT = [
+    { key: 'armCount',        label: 'Arm count',          min: 1,    max: 6,    step: 1,     fmt: v => v.toFixed(0) },
+    { key: 'armWinding',      label: 'Arm winding',        min: 4,    max: 28,   step: 0.5,   fmt: v => v.toFixed(1) },
+    { key: 'armSpacing',      label: 'Arm spacing',        min: 0.5,  max: 1.8,  step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'hazeAmount',      label: 'Nebula haze',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'gasClouds',       label: 'Gas clouds',         min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 10,   step: 0.05,  fmt: v => v.toFixed(2) },
+    { key: 'starFlare',       label: 'Star flares',        min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'ovalness',        label: 'Ovalness (Sa/Sb)',   min: 1.0,  max: 1.7,  step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'camTilt',         label: 'Camera tilt',        min: 0.0,  max: 1.45, step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'rotSpeed',        label: 'Rotation speed',     min: 0,    max: 0.1,  step: 0.001, fmt: v => v.toFixed(3) },
+    { key: 'compactness',     label: 'Compactness',        min: 0.5,  max: 3.0,  step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'starDensity',     label: 'Star density',       min: 0,    max: 4,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'maxStarLod',      label: 'Max star refill',    min: 0,    max: 6,    step: 0.1,   fmt: v => v.toFixed(1) },
+    { key: 'twinkleFraction', label: 'Twinkle amount',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'twinkleSpeed',    label: 'Twinkle speed',      min: 0,    max: 8,    step: 0.05,  fmt: v => v.toFixed(2) },
+    { key: 'blackHoleSize',   label: 'Black hole size',    min: 0.01, max: 0.2,  step: 0.001, fmt: v => v.toFixed(3) },
+    { key: 'centerSpread',    label: 'Center tint spread', min: 0.1,  max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
+    // Dive-animation param (JS choreography, NOT a shader uniform, so it
+    // doesn't appear in the Copy-GLSL block): 0 = linear zoom, 1 = full
+    // ease-in-out. 0.75 = slow start, fast middle, slow finale.
+    { key: 'zoomEase',        label: 'Zoom ease (dive)',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) }
+  ];
+  // One set of four pickers, bound to whichever mode is active: in normal
+  // mode they edit the normal* palette, in boom mode the boom palette. Both
+  // palettes persist independently, so switching modes never loses edits.
+  const COLORS = [
+    { normalKey: 'normalCenter', boomKey: 'center', label: 'Center color (spiral inner tone)' },
+    { normalKey: 'normalArm',    boomKey: 'arm',    label: 'Arm color (spiral outer tone)' },
+    { normalKey: 'normalHaze',   boomKey: 'haze',   label: 'Nebula color' },
+    { normalKey: 'normalStar',   boomKey: 'star',   label: 'Star color' }
+  ];
+
+  function rgbToHex(rgb){ return '#' + rgb.map(v => Math.round(Math.min(1,v)*255).toString(16).padStart(2,'0')).join(''); }
+  function hexToRgb(hex){ return [parseInt(hex.slice(1,3),16)/255, parseInt(hex.slice(3,5),16)/255, parseInt(hex.slice(5,7),16)/255]; }
+
+  // Maps GLSL uniform names (as they appear in the "Copy GLSL values"
+  // block) back to state keys, so the textarea can be edited or pasted
+  // into and applied. Scalars are clamped to the same min/max as their
+  // slider (via STRUCT); vec3 colors are clamped to [0,1].
+  const UNIFORM_TO_KEY = {
+    uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing',
+    uHaze: 'hazeAmount', uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
+    uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
+    uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
+    uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
+    uBlackHoleSize: 'blackHoleSize', uCenterSpread: 'centerSpread'
+  };
+  const VEC_UNIFORM_TO_KEY = {
+    uCenterColor: 'center', uArmColor: 'arm', uOuterHazeColor: 'haze', uStarColor: 'star',
+    uNormalCenterColor: 'normalCenter', uNormalArmColor: 'normalArm',
+    uNormalHazeColor: 'normalHaze', uNormalStarColor: 'normalStar'
+  };
+  const STRUCT_BY_KEY = {};
+  STRUCT.forEach(c => { STRUCT_BY_KEY[c.key] = c; });
+
+  // Parses a block of "uName = value;" / "uName = vec3(r, g, b);" lines
+  // (any order, extra text ignored) and applies whatever it finds to
+  // state. Returns { count, errors } for status feedback.
+  function applyGlslText(text) {
+    let count = 0;
+    const errors = [];
+
+    const scalarRe = /\b(u[A-Za-z]+)\s*=\s*([^;]+);/g;
+    let m;
+    while ((m = scalarRe.exec(text)) !== null) {
+      const name = m[1];
+      const raw = m[2].trim();
+
+      if (VEC_UNIFORM_TO_KEY[name]) {
+        const vm = raw.match(/vec3\s*\(\s*([^,]+),\s*([^,]+),\s*([^)]+)\)/);
+        if (!vm) { errors.push(name); continue; }
+        const rgb = [parseFloat(vm[1]), parseFloat(vm[2]), parseFloat(vm[3])];
+        if (rgb.some(v => !isFinite(v))) { errors.push(name); continue; }
+        state[VEC_UNIFORM_TO_KEY[name]] = rgb.map(v => Math.min(1, Math.max(0, v)));
+        count++;
+      } else if (name === 'uCoreMode') {
+        const v = parseFloat(raw);
+        if (!isFinite(v)) { errors.push(name); continue; }
+        state.coreMode = v > 0.5 ? 1 : 0;
+        count++;
+      } else if (UNIFORM_TO_KEY[name]) {
+        const key = UNIFORM_TO_KEY[name];
+        const v = parseFloat(raw);
+        if (!isFinite(v)) { errors.push(name); continue; }
+        const range = STRUCT_BY_KEY[key];
+        state[key] = range ? Math.min(range.max, Math.max(range.min, v)) : v;
+        count++;
+      }
+      // Unknown uniform names are silently ignored (forward-compatible).
+    }
+
+    return { count, errors };
+  }
+
+  const structEl = document.getElementById('struct-controls');
+  const colorEl = document.getElementById('color-controls');
+  const glslOut = document.getElementById('glsl-out');
+  let coreBtn; // declare at outer scope for mode button access
+
+  function updateCoreBtnLook() {
+    if (coreBtn) coreBtn.textContent = state.coreMode > 0.5 ? 'White bright core' : 'Black hole';
+  }
+
+  function buildControls() {
+    structEl.innerHTML = '';
+    STRUCT.forEach(c => {
+      const card = document.createElement('div');
+      card.className = 'card';
+      const label = document.createElement('label');
+      label.textContent = c.label;
+      card.appendChild(label);
+      const row = document.createElement('div');
+      row.className = 'row';
+      const slider = document.createElement('input');
+      slider.type = 'range'; slider.min = c.min; slider.max = c.max; slider.step = c.step; slider.value = state[c.key];
+      const readout = document.createElement('span');
+      readout.className = 'readout';
+      readout.textContent = c.fmt(state[c.key]);
+      slider.addEventListener('input', () => { state[c.key] = parseFloat(slider.value); readout.textContent = c.fmt(state[c.key]); sync(); });
+      row.appendChild(slider); row.appendChild(readout);
+      card.appendChild(row);
+      structEl.appendChild(card);
+    });
+    // core style toggle: black hole vs bright white core (both modes)
+    const coreCard = document.createElement('div');
+    coreCard.className = 'card';
+    const coreLabel = document.createElement('label');
+    coreLabel.textContent = 'Core style';
+    coreCard.appendChild(coreLabel);
+    coreBtn = document.createElement('button');
+    coreBtn.className = 'coreBtn';
+    coreBtn.style.width = '100%';
+    updateCoreBtnLook();
+    coreBtn.addEventListener('click', () => { state.coreMode = state.coreMode > 0.5 ? 0 : 1; updateCoreBtnLook(); sync(); });
+    coreCard.appendChild(coreBtn);
+    structEl.appendChild(coreCard);
+    buildColorControls();
+  }
+
+  // Rebuilt on every mode switch so the four pickers always show and edit
+  // the palette of the mode currently on screen.
+  function buildColorControls() {
+    const boomActive = colorTransition > 0.5;
+    colorEl.previousElementSibling.textContent = 'Color (' + (boomActive ? 'boom' : 'normal') + ' mode)';
+    colorEl.innerHTML = '';
+    COLORS.forEach(c => {
+      const key = boomActive ? c.boomKey : c.normalKey;
+      const card = document.createElement('div');
+      card.className = 'card';
+      const label = document.createElement('label');
+      label.textContent = c.label;
+      card.appendChild(label);
+      const picker = document.createElement('input');
+      picker.type = 'color'; picker.value = rgbToHex(state[key]);
+      picker.addEventListener('input', () => { state[key] = hexToRgb(picker.value); sync(); });
+      card.appendChild(picker);
+      colorEl.appendChild(card);
+    });
+  }
+
+  function fmtVec(rgb){ return 'vec3(' + rgb.map(v => v.toFixed(3)).join(', ') + ')'; }
+  function glslText() {
+    return [
+      'uArmCount        = ' + state.armCount.toFixed(0) + ';',
+      'uArmWinding      = ' + state.armWinding.toFixed(1) + ';',
+      'uArmSpacing      = ' + state.armSpacing.toFixed(2) + ';',
+      'uHaze            = ' + state.hazeAmount.toFixed(2) + ';',
+      'uGasClouds       = ' + state.gasClouds.toFixed(2) + ';',
+      'uBulge           = ' + state.bulgeAmount.toFixed(2) + ';',
+      'uDiskThickness   = ' + state.diskThickness.toFixed(2) + ';',
+      'uFlare           = ' + state.starFlare.toFixed(2) + ';',
+      'uOvalness        = ' + state.ovalness.toFixed(2) + ';',
+      'uCamTilt         = ' + state.camTilt.toFixed(2) + ';',
+      'uRotSpeed        = ' + state.rotSpeed.toFixed(3) + ';',
+      'uCompactness     = ' + state.compactness.toFixed(2) + ';',
+      'uStarDensity     = ' + state.starDensity.toFixed(2) + ';',
+      'uMaxStarLod      = ' + state.maxStarLod.toFixed(1) + ';',
+      'uTwinkleFraction = ' + state.twinkleFraction.toFixed(2) + ';',
+      'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
+      'uCoreMode        = ' + (state.coreMode > 0.5 ? '1.0' : '0.0') + ';',
+      'uBlackHoleSize   = ' + state.blackHoleSize.toFixed(3) + ';',
+      'uCenterColor     = ' + fmtVec(state.center) + ';',
+      'uArmColor        = ' + fmtVec(state.arm) + ';',
+      'uOuterHazeColor  = ' + fmtVec(state.haze) + ';',
+      'uStarColor       = ' + fmtVec(state.star) + ';',
+      'uNormalCenterColor = ' + fmtVec(state.normalCenter) + ';',
+      'uNormalArmColor    = ' + fmtVec(state.normalArm) + ';',
+      'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
+      'uNormalStarColor   = ' + fmtVec(state.normalStar) + ';',
+      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';'
+    ].join('\n');
+  }
+
+  function sync() {
+    gl.uniform1f(U.uArmCount, state.armCount);
+    gl.uniform1f(U.uArmWinding, state.armWinding);
+    gl.uniform1f(U.uArmSpacing, state.armSpacing);
+    gl.uniform1f(U.uHaze, state.hazeAmount);
+    gl.uniform1f(U.uGasClouds, state.gasClouds);
+    gl.uniform1f(U.uBulge, state.bulgeAmount);
+    gl.uniform1f(U.uDiskThickness, state.diskThickness);
+    gl.uniform1f(U.uFlare, state.starFlare);
+    gl.uniform1f(U.uOvalness, state.ovalness);
+    gl.uniform1f(U.uCamTilt, currentTilt);
+    gl.uniform1f(U.uRotSpeed, state.rotSpeed);
+    gl.uniform1f(U.uCompactness, state.compactness);
+    gl.uniform1f(U.uStarDensity, state.starDensity);
+    gl.uniform1f(U.uMaxStarLod, state.maxStarLod);
+    gl.uniform1f(U.uTwinkleFraction, state.twinkleFraction);
+    gl.uniform1f(U.uTwinkleSpeed, state.twinkleSpeed);
+    gl.uniform1f(U.uCoreMode, state.coreMode);
+    gl.uniform1f(U.uBlackHoleSize, state.blackHoleSize);
+    gl.uniform3fv(U.uCenterColor, state.center);
+    gl.uniform3fv(U.uArmColor, state.arm);
+    gl.uniform3fv(U.uOuterHazeColor, state.haze);
+    gl.uniform3fv(U.uStarColor, state.star);
+    gl.uniform3fv(U.uNormalCenterColor, state.normalCenter);
+    gl.uniform3fv(U.uNormalArmColor, state.normalArm);
+    gl.uniform3fv(U.uNormalHazeColor, state.normalHaze);
+    gl.uniform3fv(U.uNormalStarColor, state.normalStar);
+    gl.uniform1f(U.uCenterSpread, state.centerSpread);
+    // While the dive is paused the render loop skips drawing, so slider
+    // edits would silently apply to the NEXT drawn frame only. Flag a
+    // one-off repaint so tweaking values against a frozen mid-dive frame
+    // (the best way to A/B e.g. disk thickness) updates instantly.
+    pausedDirty = true;
+    // Don't clobber the textarea while the user is actively editing it.
+    if (document.activeElement !== glslOut) glslOut.value = glslText();
+  }
+
+  document.getElementById('reset-btn').addEventListener('click', () => {
+    COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
+    KEYS.forEach(k => state[k] = DEFAULTS[k]);
+    // Core style follows the currently active mode (black hole in normal,
+    // white core in boom), not a fixed default -- resetting sliders/colors
+    // shouldn't silently flip the core away from the mode you're in.
+    state.coreMode = colorTransition > 0.5 ? 1 : 0;
+    updateCoreBtnLook();
+    buildControls(); sync();
+    glslOut.blur(); // resetting is explicit intent to discard any pending edit
+    glslOut.value = glslText();
+  });
+  document.getElementById('copy-btn').addEventListener('click', async () => {
+    const status = document.getElementById('copy-status');
+    try { await navigator.clipboard.writeText(glslText()); status.textContent = 'Copied'; }
+    catch(e) { status.textContent = 'Select block below to copy'; }
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  });
+
+  function applyFromTextarea() {
+    const status = document.getElementById('copy-status');
+    const { count, errors } = applyGlslText(glslOut.value);
+    if (count === 0) {
+      status.textContent = 'No valid uName = value; lines found';
+    } else {
+      buildControls();
+      sync();
+      status.textContent = errors.length
+        ? 'Applied ' + count + ', skipped ' + errors.length + ' (' + errors.join(', ') + ')'
+        : 'Applied ' + count + ' value' + (count === 1 ? '' : 's');
+    }
+    setTimeout(() => { status.textContent = ''; }, 3500);
+  }
+  document.getElementById('apply-btn').addEventListener('click', applyFromTextarea);
+  glslOut.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyFromTextarea(); }
+  });
+
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = canvas.clientWidth * dpr, h = canvas.clientHeight * dpr;
+    if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
+  }
+  new ResizeObserver(resize).observe(canvas);
+  resize();
+
+  // colorTransition: 0 = normal, 1 = boom (continuous mix in this shader).
+  // Declared before buildControls() -- the color pickers read it to decide
+  // which mode's palette they bind to.
+  let colorTransition = 0.0;
+  // Set by sync(); consumed by the paused branch of frame() to repaint the
+  // frozen frame once after any control change.
+  let pausedDirty = false;
+  // Effective camera tilt actually uploaded to the shader: equals the
+  // slider at rest, and descends toward top-down during the dive (see the
+  // tilt block in frame()). sync() uploads this too, so a paused mid-dive
+  // repaint keeps the dive's tilt instead of snapping back. Declared
+  // before the first sync() call below.
+  let currentTilt = DEFAULTS.camTilt;
+
+  buildControls(); sync();
+
+  let currentZoom = 1.0;
+  let currentFade = 1.0;
+  let isZooming = false;
+  let zoomStartTime = 0;
+  let transitionTarget = 1.0;
+  let shaderTime = 0.0;
+  let twinkleTime = 0.0; // wall-clock; never accelerated by the dive
+  let hazePulse = 1.0;   // dive-start nebula "come alive" beat (uHazePulse)
+  let lastFrame = Date.now();
+  let isPaused = false;
+  let pauseStart = 0;
+
+  const boomBtn = document.getElementById('boom-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  const btnNormal = document.getElementById('mode-normal');
+  const btnBoom = document.getElementById('mode-boom');
+
+  function togglePause() {
+    if (!isZooming) return;
+    if (isPaused) {
+      // shift the zoom clock forward by the paused duration so the dive
+      // resumes exactly where it left off, and reset lastFrame so the
+      // next delta doesn't include the paused time.
+      const pausedFor = Date.now() - pauseStart;
+      zoomStartTime += pausedFor;
+      lastFrame = Date.now();
+      isPaused = false;
+      pauseBtn.textContent = 'Pause';
+    } else {
+      isPaused = true;
+      pauseStart = Date.now();
+      pauseBtn.textContent = 'Resume';
+    }
+  }
+  pauseBtn.addEventListener('click', togglePause);
+
+  function setBoomBtnLook(isBoom) {
+    boomBtn.textContent = isBoom ? 'Reset' : "Let's boom";
+    boomBtn.style.background = isBoom ? '#d946ef' : '#7c6af7';
+  }
+  function setInstantLook(isBoom) {
+    btnNormal.style.background = isBoom ? 'rgba(255,255,255,0.14)' : '#7c6af7';
+    btnNormal.style.color = isBoom ? 'rgba(255,255,255,0.85)' : '#fff';
+    btnBoom.style.background = isBoom ? '#7c6af7' : 'rgba(255,255,255,0.14)';
+    btnBoom.style.color = isBoom ? '#fff' : 'rgba(255,255,255,0.85)';
+  }
+
+  function startTransition(toBoom) {
+    if (isZooming) return;
+    transitionTarget = toBoom ? 1.0 : 0.0;
+    isZooming = true;
+    zoomStartTime = Date.now();
+    boomBtn.disabled = true;
+    boomBtn.style.opacity = '0';
+    boomBtn.style.pointerEvents = 'none';
+    // btnNormal/btnBoom stay enabled during the dive so they can abort +
+    // jump straight to their target state, for quick iteration/testing.
+    pauseBtn.style.display = 'block';
+    pauseBtn.textContent = 'Pause';
+  }
+
+  // Instant buttons abort any in-progress (or paused) dive and jump
+  // straight to the target end-state, for quick iteration/testing.
+  function abortZoom() {
+    isZooming = false;
+    isPaused = false;
+    boomBtn.disabled = false;
+    boomBtn.style.pointerEvents = 'auto';
+    boomBtn.style.opacity = '1';
+    btnNormal.disabled = false;
+    btnBoom.disabled = false;
+    pauseBtn.style.display = 'none';
+  }
+
+  boomBtn.addEventListener('click', () => startTransition(colorTransition < 0.5));
+  btnNormal.addEventListener('click', () => {
+    abortZoom();
+    colorTransition = 0.0; currentZoom = 1.0; currentFade = 1.0;
+    state.coreMode = 0; // black hole for normal mode
+    updateCoreBtnLook(); buildColorControls(); sync();
+    setBoomBtnLook(false); setInstantLook(false);
+  });
+  btnBoom.addEventListener('click', () => {
+    abortZoom();
+    colorTransition = 1.0; currentZoom = 1.0; currentFade = 1.0;
+    state.coreMode = 1; // white bright core for boom mode
+    updateCoreBtnLook(); buildColorControls(); sync();
+    setBoomBtnLook(true); setInstantLook(true);
+  });
+
+  function frame() {
+    if (isPaused) {
+      // Frozen frame: no clocks advance, but if a control changed (sync
+      // set pausedDirty) redraw once with the updated uniforms -- all the
+      // per-frame uniforms (iTime, uZoom, ...) still hold their values
+      // from the moment of pausing, so only the edit shows.
+      if (pausedDirty) {
+        pausedDirty = false;
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+      }
+      requestAnimationFrame(frame);
+      return;
+    }
+    const now = Date.now();
+    const delta = (now - lastFrame) / 1000.0;
+    lastFrame = now;
+    twinkleTime += delta; // always real-time, regardless of dive/rotation
+    hazePulse = 1.0;      // neutral unless the pulse/dive branches override
+
+    if (isZooming) {
+      const elapsed = now - zoomStartTime;
+      // "Come alive" beat before the dive, measured off the reference:
+      // its haze dips ~0.4-0.8s in, recovers by ~1.2s, then the zoom
+      // takes over. The nebula dims to 50%, swells back past neutral,
+      // and the overshoot bleeds off in the first dive moments. Stars
+      // are deliberately untouched -- they hold steady while the haze
+      // breathes, which is what sells it.
+      const PULSE = 1000;
+      const duration = 5000;
+      const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
+      // Zoom pacing: blend a smoothstep S-curve into the linear progress
+      // so the dive eases IN and OUT -- slow off the mark, quickest
+      // through the middle, easing again into the finale. 0 = the old
+      // linear zoom; 1 = full smoothstep (zero velocity at both ends,
+      // which reads as a stall against the pulse seam). 0.75 keeps a
+      // live 0.25x starting velocity (no dead spot after the pulse) while
+      // the middle runs ~1.4x. Total duration and endpoints unchanged.
+      // Driven live by the "Zoom ease (dive)" slider (state.zoomEase).
+      const ZOOM_EASE = state.zoomEase;
+      if (elapsed < PULSE) {
+        shaderTime += delta;
+        const pp = elapsed / PULSE;
+        hazePulse = pp < 0.45
+          ? 1.0 - 0.50 * ss(pp / 0.45)             // dim to 0.50
+          : 0.50 + 0.75 * ss((pp - 0.45) / 0.55);  // swell to 1.25
+        currentZoom = 1.0;
+        currentFade = 1.0;
+      } else if (elapsed < PULSE + duration) {
+        // Rotation clock: the dive's base 5x spin-up, ramping further as
+        // the camera nears the core (Kepler-flavored: closer orbits move
+        // faster, up to ~20x). Without this the late dive LOOKS frozen --
+        // the haze/arms that make rotation readable are gone by then, a
+        // uniform swarm is nearly rotation-invariant, and the radial rush
+        // swamps the constant tangential speed. shaderTime only drives
+        // the spin angle, so accelerating it is safe (twinkle has its own
+        // wall clock).
+        const depth = 1.0 - currentZoom;
+        shaderTime += delta * 5.0 * (1.0 + 3.0 * depth * depth * depth);
+        const t = elapsed - PULSE;
+        // Ease-in-out zoom: blend the smoothstep S-curve into linear
+        // progress (see ZOOM_EASE). Endpoints are preserved exactly, so
+        // the 5 s duration and the zoom 1 -> 0 range are unchanged -- only
+        // the pacing within eases: slow start, faster middle, slow finale.
+        const p = t / duration;
+        const pz = p + (p * p * (3.0 - 2.0 * p) - p) * ZOOM_EASE;
+        currentZoom = Math.max(0.0001, 1.0 - pz);
+        hazePulse = 1.0 + 0.25 * Math.max(0.0, 1.0 - t / 800); // settle the overshoot
+        currentFade = 1.0;
+      } else if (elapsed < PULSE + duration + 700) {
+        shaderTime += delta;
+        currentZoom = 0.0001;
+        currentFade = 1.0;
+      } else if (elapsed < PULSE + duration + 700 + 1500) {
+        shaderTime += delta;
+        colorTransition = transitionTarget;
+        // Core style follows the target mode (black hole in normal, white
+        // core in boom), same as the instant mode buttons. Switched while
+        // fully zoomed out so the swap is hidden behind the dive.
+        state.coreMode = transitionTarget > 0.5 ? 1 : 0;
+        updateCoreBtnLook();
+        gl.uniform1f(U.uCoreMode, state.coreMode);
+        currentZoom = 1.0;
+        const fadeProgress = (elapsed - (PULSE + duration + 700)) / 1500;
+        currentFade = Math.min(1.0, fadeProgress);
+      } else {
+        shaderTime += delta;
+        isZooming = false;
+        colorTransition = transitionTarget;
+        state.coreMode = transitionTarget > 0.5 ? 1 : 0;
+        updateCoreBtnLook();
+        gl.uniform1f(U.uCoreMode, state.coreMode);
+        currentZoom = 1.0;
+        currentFade = 1.0;
+        boomBtn.disabled = false;
+        boomBtn.style.pointerEvents = 'auto';
+        boomBtn.style.opacity = '1';
+        btnNormal.disabled = false;
+        btnBoom.disabled = false;
+        setBoomBtnLook(colorTransition > 0.5);
+        setInstantLook(colorTransition > 0.5);
+        buildColorControls(); // rebind pickers to the mode just landed in
+        pauseBtn.style.display = 'none';
+        isPaused = false;
+      }
+    } else {
+      shaderTime += delta;
+    }
+
+    // Dive tilt: descend toward top-down as the camera closes in, so the
+    // zoom reads as diving INTO the galaxy rather than magnifying the
+    // same oblique picture. Exponential ease-in on zoom progress: the
+    // view is essentially untouched through the early and mid dive, and
+    // the whole descent lands in the final stretch (the plunge). The
+    // floor stays at 60% of the slider tilt (~44 deg): fully top-down
+    // forfeits the oblique stretch that keeps distant stars in frame, so
+    // the hole would swallow the view early and eat the flare finale --
+    // and a near-axis end reads forced anyway; a partial lean-in sells
+    // the plunge while keeping the shot composed.
+    // Normalized so zoom 1 gives EXACTLY the slider value at rest; the
+    // fade phase resets zoom to 1 behind black, snapping the tilt home
+    // invisibly (same trick as the core-mode swap).
+    const dp = Math.min(1.0, Math.max(0.0, 1.0 - currentZoom));
+    const E0 = 1.0 / 1024.0; // 2^-10, the easeInExpo baseline at dp = 0
+    const eased = (Math.pow(2.0, 10.0 * (dp - 1.0)) - E0) / (1.0 - E0);
+    currentTilt = state.camTilt * (1.0 - 0.40 * eased);
+    gl.uniform1f(U.uCamTilt, currentTilt);
+
+    gl.uniform1f(U.iTime, shaderTime);
+    gl.uniform1f(U.uTwinkleTime, twinkleTime);
+    gl.uniform1f(U.uHazePulse, hazePulse);
+    // p-space size of one screen pixel (worst axis), for star anti-aliasing.
+    // Perspective compresses the far side more than the near side, so this
+    // constant floor is an approximation (tuned via cos(tilt) as a stand-in
+    // for the old uniform squash factor) rather than an exact per-pixel fit.
+    // 3.3 = 2 x the 1.65 framing constant (full vertical plane extent per
+    // canvas height), keeping the AA floor calibrated to the new framing.
+    const pxSize = 3.3 * currentZoom * Math.max(
+      1.0 / gl.canvas.width,
+      1.0 / (gl.canvas.height * Math.cos(currentTilt))
+    );
+    gl.uniform1f(U.uPxSize, pxSize);
+    gl.uniform1f(U.uColorTransition, colorTransition);
+    gl.uniform1f(U.uZoom, currentZoom);
+    gl.uniform1f(U.uFade, currentFade);
+    gl.uniform2f(U.iResolution, gl.canvas.width, gl.canvas.height);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -252,8 +252,37 @@ the perspective foreshortening of the old squash factor.)
 - Zero-value uniforms (`uDiskThickness`, `uTwinkleSpeed`, `uGasClouds`, …)
   cost nothing: their branches are uniform-coherent and
   fully skipped.
+- **Haze cost is per-layer on/off, not proportional.** Slider values are
+  post-multipliers; the noise runs at any value above 0. Exactly 0 trips
+  the skip: `uArmSmoke`+`uCoreGlow` share one gate (both must be 0 to
+  skip their smoke pass), `uGlowLayer` has its own, `uCorona` is ~free.
 
-## 9. Palette / mode cheat sheet
+## 9. Low-battery / power-saver mode
+
+On low battery the OS throttles CPU/GPU clocks (and iOS Low Power Mode
+caps ProMotion to 60 Hz), so the SAME shader suddenly drops frames — the
+fix is to lower work per frame, not to fight the throttle. Detect it with
+`battery_plus` (`isInBatterySaveMode`, `batteryLevel`) — prefer reacting
+to the OS battery-saver FLAG (user intent) over a raw percentage; if
+using a percentage, ≤ 20 % is a sane default. Apply steps in order; each
+is independent and reversible when power returns:
+
+| step | change | saves | visible cost |
+|---|---|---|---|
+| 1 | Rest frame pacing 30 → 24 fps (dive 60 → 30) | large, battery-first | none per frame; dive slightly less silky |
+| 2 | `uGlowLayer = 0` | ~10 % of the rest frame (skips one full smoke pass) | subtle: nebula loses its soft outer bloom |
+| 3 | Cap render DPR at 2.0 (or 1.5) | biggest single lever (fill-rate scales with pixel count) | mild softness, hidden by motion |
+| 4 | `uDiskThickness = 0` | ~20 % of the rest frame (flat star path) | 3D rim/parallax gone — flat but clean look |
+| 5 | `uMaxStarLod = 1.0` | flattens the mid-dive cost spike (the LOD cross-fade is the most expensive frame) | late dive refills fewer stars |
+
+Steps 1–3 are a good "battery saver" preset; 4–5 are the deep fallback
+for genuinely weak/hot devices. Do NOT dim stars or drop `uTwinkleTime`
+updates — star brightness is the look's backbone, and twinkle is already
+near-free. Remember to keep `iResolution`/`uPxSize` consistent with the
+DPR you actually render at (§7), and restore everything when
+`isInBatterySaveMode` clears.
+
+## 10. Palette / mode cheat sheet
 
 - **Normal mode**: `uColorTransition = 0`, `uCoreMode = 0` (black hole),
   normal palette at indices 42–53.

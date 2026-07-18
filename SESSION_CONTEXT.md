@@ -420,3 +420,14 @@ transfer (all ALU, no textures):
     floats); FLUTTER_IMPLEMENTATION.md table + prose regenerated and
     cross-checked against galaxy.frag. Copy/apply block now carries the
     four in place of uHaze.
+
+33. **Low-battery / power-saver ladder documented** (user hit perceived
+    lag that turned out to be OS low-battery throttling, not a shader
+    regression). FLUTTER_IMPLEMENTATION.md §9: detect via battery_plus
+    (prefer the OS battery-saver FLAG over raw %), then apply in order —
+    (1) frame pacing 30→24 fps rest / 60→30 dive, (2) uGlowLayer = 0
+    (~10 % rest frame back, skips one smoke pass), (3) DPR cap 2.0/1.5,
+    (4) uDiskThickness = 0 (flat path, ~20 %), (5) uMaxStarLod = 1
+    (flattens the mid-dive LOD spike). Never dim stars. Also documented
+    that haze-slider cost is per-layer on/off (post-multipliers; only
+    exactly 0 trips the skip; ArmSmoke+CoreGlow share one gate).
