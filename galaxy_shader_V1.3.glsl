@@ -4,6 +4,7 @@
 // http://iopscience.iop.org/0004-637X/783/2/138/pdf/0004-637X_783_2_138.pdf
 // Shadertoy-compatible: paste directly into Shadertoy's Image tab (custom
 // uniforms read as 0 there, so wire them to constants for a quick preview).
+//
 // V1.3, exported verbatim from galaxy_editor_1.html. New since V1.2:
 // look-at perspective camera with dive tilt (uCamTilt), 3D disk thickness
 // with height-parallax star sheets (uDiskThickness), star diffraction
@@ -11,11 +12,15 @@
 // (uMaxStarLod), per-pixel star footprints (perspective-correct sizing),
 // far-field early-out, gaussian bulge falloff, closer 1.65 framing,
 // dive "come alive" haze pulse (uHazePulse), nebula haze split into
-// four components (uArmSmoke/uCoreGlow/uGlowLayer/uCorona; the old
-// single uHaze == all four equal), drifting gas-cloud layer
-// with a gap-anchored shape (uGasClouds), gaussian center tint
-// (uCenterSpread), and split normal-mode colors (uNormal*). Every new
-// uniform's zero value restores the older math where one existed.
+// separate components (uArmSmoke / uCoreGlow / uCoreGlowSpread /
+// uCorona; the old single uHaze == all of them equal, and the secondary
+// glow layer has since been removed entirely), outward arm-star shaping
+// -- density falloff, plateau spread and one-sided edge skew
+// (uArmFalloff / uArmSpread / uArmEdgeSkew, stars only), drifting
+// gas-cloud layer with a gap-anchored shape (uGasClouds), gaussian
+// center tint (uCenterSpread), and split normal-mode colors (uNormal*).
+// Every new uniform's zero value restores the older math where one
+// existed.
 //
 // Host-supplied globals (Shadertoy provides these automatically):
 //   iResolution (vec2 canvas pixels), iTime (rotation clock; the dive
@@ -32,9 +37,30 @@ uniform float uArmWinding;
 uniform float uArmSpacing;      // radial spacing between arm turns without
                                 // changing how many there are; see spacingWarp().
                                 // >1 opens the center, <1 opens the rim. 1.0 = original.
-// --- Nebula haze, split into four independently-scaled components (each
-// is amount x hazeMod x its own shape; 0 = that piece hidden). Stars are
-// separate. The old single uHaze == all four at the same value.
+uniform float uArmFalloff;      // outward DENSITY falloff of the arm star
+                                // population: with radius fewer stars are
+                                // kept (per-star presence roll, survivors
+                                // stay full brightness -- never dimmed).
+                                // 0 = uniform density, bit-identical.
+uniform float uArmSpread;       // outward WIDTH of the arm star band: the
+                                // angular cross-section fattens with
+                                // radius (armProfile) and partly
+                                // dissolves toward an isotropic scatter
+                                // (armDissolve), so the outer arms lose
+                                // the string-like shape. STARS ONLY --
+                                // the smoke arms keep their fixed width.
+                                // 0 = old fixed-width arms, bit-identical.
+uniform float uArmEdgeSkew;     // one-sided arm falloff: hard, sharply
+                                // defined INNER edge and a soft feathered
+                                // OUTER edge (density-wave shock front vs
+                                // trailing material). Reshapes the flanks
+                                // only -- crest brightness is unchanged
+                                // and nothing clips. STARS ONLY.
+                                // 0 = symmetric arms, bit-identical.
+// --- Nebula haze, split into independently-scaled components (each is
+// amount x hazeMod x its own shape; 0 = that piece hidden). Stars are
+// separate. The old single uHaze == all of these at the same value.
+// (A fourth component, the soft secondary glow layer, was removed.)
 uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
 uniform float uCoreGlow;        // broad bright haze at the nucleus
 uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
@@ -43,7 +69,6 @@ uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
                                 // independent of its width). 1.0 = the
                                 // original shape, <1 hugs the core,
                                 // >1 extends outward.
-uniform float uGlowLayer;       // soft diffuse secondary glow (the b layer)
 uniform float uCorona;          // tight bright bloom right at the core
 uniform float uBulge;           // stellar bulge strength; 0 = arms only
                                 // (clean starfield), 1 = full. Stars are
@@ -95,7 +120,7 @@ uniform float uCoreMode; // 0.0 = black hole, 1.0 = bright white core
 uniform float uBlackHoleSize;
 uniform vec3 uCenterColor;
 uniform vec3 uArmColor;
-uniform vec3 uOuterHazeColor;   // nebula glow (b layer + corona)
+uniform vec3 uOuterHazeColor;   // nebula accents (corona + gas clouds)
 uniform vec3 uStarColor;
 // Normal mode's palette: same four roles as boom's, driving an exact
 // decomposition of the original grayscale formula -- with all four left at
@@ -213,7 +238,36 @@ float starFlare(vec2 d, float dist, float radius, float reach, float hs, float a
 // on its own, exactly as before; weighting after mixing). wantAll = 0.0
 // restores the old single-population behavior: skip non-kept stars
 // early (.x stays 0, unused) -- the cheap path for the sheet calls.
-vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll) {
+// How much the STAR arm band has fattened at this radius (uArmSpread).
+// Shares the r 0.4 -> 1.15 ramp with the dissolve and the density
+// thinning, so all three grow together toward the rim -- but each has
+// its own slider, so width and density are dialled independently.
+const float ARM_SPREAD_COMP = 0.60;
+
+float armWiden(float r) {
+    return smoothstep(0.4, 1.15, r) * clamp(uArmSpread, 0.0, 1.0);
+}
+
+// Radial presence probability for ARM stars (see uArmFalloff): 1 inside,
+// thinning to 25% by the outer disk at full falloff. Shares the same
+// radius ramp as the dispersion in armAngleMask so both effects grow
+// together.
+float armStarKeep(float r) {
+    float keep = 1.0 - 0.75 * uArmFalloff * smoothstep(0.4, 1.15, r);
+    // Spreading must REDISTRIBUTE stars, not breed them: a plateau of
+    // half-width W widens the band from ~0.78 rad to ~(0.78 + W), so thin
+    // the population by exactly that ratio. The same stars end up spread
+    // over more sky -- which is what "loosened gravitational pull" should
+    // mean -- instead of the arm simply gaining stars as it fattens.
+    return keep / (1.0 + ARM_SPREAD_COMP * armWiden(r));
+}
+
+// armKeep thins the FULL-population field (.x) by a per-star presence
+// roll on a dedicated hash -- fewer stars at full brightness, the same
+// mechanism as the bulge's keep. It never touches the keep subset (.y),
+// so a star thinned out of the arms can still appear as a bulge star.
+// armKeep = 1.0 skips the roll entirely: bit-identical.
+vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll, float armKeep) {
     float GRID = (8.0 + 18.0 * uStarDensity) * lvlScale;
     // BASE_R is the nominal star size; each star scales it by a hashed
     // multiplier below so the field has small/large variety.
@@ -287,7 +341,9 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
                 float flare = flaring ? starFlare(d, dist, radius, reach, hs, ang, pxCtl.z) * atten : 0.0;
                 if (core + flare > 0.0) {
                     float bright = (core + flare) * starTwinkle(n);
-                    result.x = max(result.x, bright);
+                    if (armKeep >= 0.999 || hash1(n + vec2(61.7, 12.9)) <= armKeep) {
+                        result.x = max(result.x, bright);
+                    }
                     if (kept) result.y = max(result.y, bright);
                 }
             }
@@ -308,18 +364,18 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
 // subset. Each component cross-fades between LOD levels on its own --
 // the same scalar mix the old per-population passes ran -- so weighting
 // and combining stay downstream and bit-identical.
-vec2 starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll) {
+vec2 starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll, float armKeep) {
     float lod = min(max(0.0, log2(1.0 / max(uZoom, 0.0001))), uMaxStarLod);
     float l0 = floor(lod);
     float f = lod - l0;
     float s0 = exp2(l0);
-    vec2 a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll);
+    vec2 a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll, armKeep);
     // The cross-fade weight f derives purely from uZoom, so this branch is
     // fully coherent; at rest (f = 0) it skips the second lattice level
     // entirely, halving the star pass. mix(a, b, 0) == a, so no visual
     // change where it fires.
     if (f < 0.001) return a;
-    vec2 b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll);
+    vec2 b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll, armKeep);
     return mix(a, b, f);
 }
 
@@ -429,27 +485,112 @@ float spacingWarp(float r) {
     return 1.5 * pow(r / 1.5, uArmSpacing);
 }
 
+
+// Angular cross-section of the STAR arms: independent WIDTH and EDGE
+// SHARPNESS. (Smoke does not use this -- see the note in arm().)
+//
+// Width comes from a PLATEAU, not from lowering the exponent. Easing the
+// exponent down does widen the band, but it also lifts the profile's
+// floor (0.739^k), which floods the inter-arm gaps with stars; pinning
+// that floor back down then cancels most of the widening, so the spread
+// slider degenerated into a dimmer. Instead the falloff is pushed
+// OUTWARD by W radians, giving a flat full-brightness top of half-width
+// W with the original edge steepness intact on both sides. Width and
+// sharpness stop fighting each other, and the floor barely moves.
+float armProfile(float phase, float aw, float r) {
+    float sk = clamp(uArmEdgeSkew, 0.0, 1.0);
+    float w  = armWiden(r);                 // 0..1, uArmSpread x radius ramp
+    float P  = pow(1.15, aw);
+    // Both controls idle -> the original expression, bit for bit.
+    if (sk < 0.001 && w < 0.001) return pow((1.0 - 0.15*sin(phase)) / 1.15, aw) * P;
+
+    // Signed angular distance from the crest (the band peaks where
+    // sin(phase) = -1, i.e. phase = -PI/2), wrapped to [-PI, PI].
+    float d = mod(phase + 1.5707963 + 3.1415927, 6.2831853) - 3.1415927;
+    // Plateau: hold full crest brightness across |d| < W, then run the
+    // ORIGINAL falloff from there outward. sin(-PI/2 + x) == -cos(x), so
+    // the shifted profile is just (1 + 0.15*cos(|d| - W)) / 1.15.
+    float W  = w * 1.15;
+    float ad = max(abs(d) - W, 0.0);
+    float base = (1.0 + 0.15*cos(ad)) / 1.15;
+
+    // Asymmetric flanks (uArmEdgeSkew) -- the density-wave look: gas piles
+    // up in a shock on the arm's inner edge (sharp) while material trails
+    // off outward (feathered). The crest is exactly where base == 1, and
+    // 1^K == 1 for any K, so the two flanks can run DIFFERENT exponents
+    // and still meet perfectly -- continuous in value AND slope (the
+    // profile is quadratic-flat at its peak), so there is no seam and
+    // nothing clips. Area-preserving pair: a flank's width goes as
+    // 1/sqrt(exponent), so holding (1/sqrt(sIn) + 1/sqrt(sOut)) == 2 keeps
+    // the cross-section while the flanks trade sharpness for feathering.
+    float K = aw;
+    if (sk >= 0.001) {
+        float a = 1.0 - 0.7 * sk;               // inner half-width factor
+        float b = 1.0 + 0.7 * sk;               // outer half-width factor
+        float side = smoothstep(-0.8, 0.8, d);  // 0 = outer flank, 1 = inner
+        K = mix(aw / (b * b), aw / (a * a), side);
+    }
+
+    // Trough pinning, now only mopping up the small residual the plateau
+    // and the skew leave behind: remap this profile's [trough, crest] onto
+    // the ORIGINAL arm's [trough, crest] so the gaps between arms stay
+    // exactly as dark as they were. baseMin is the true minimum of the
+    // shifted profile (at |d| = PI), so the mapping is exact.
+    float baseMin = (1.0 - 0.15*cos(W)) / 1.15;
+    float lo    = pow(baseMin, K);
+    float loRef = exp(-0.302283 * aw);
+    float f = (pow(base, K) - lo) / (1.0 - lo) * (1.0 - loRef) + loRef;
+    return f * P;
+}
+
 float arm(float n, float aw, float wb, float wn, vec2 p){
     float t = atan(p.y, p.x);
     float r = length(p) + 1e-4;
     float rw = spacingWarp(r);
-    return pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw) * exp(-r*r) * exp(-0.07/r);
+    // Mild outer taper from the same r = 1.15 shoulder as the star arms,
+    // so the smoke stops trailing ~0.4 beyond the last visible stars --
+    // the two arm lengths now end near each other (~1.5-1.6), gas just
+    // slightly past the stellar disk. Identity below the shoulder.
+    float ex = max(r - 1.15, 0.0);
+    // NOTE: the smoke arm keeps the plain fixed-width profile on purpose.
+    // The outward widening lives ONLY on the star arms (armAngleMask ->
+    // armProfile) -- spreading the smoke too made the whole nebula fatten,
+    // which is not what was wanted: the gas keeps its shape, the stars
+    // come loose from it.
+    return pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*3.0);
+}
+
+// Radial envelope of the STAR arms alone (no angular structure). Outer
+// taper: past r = 1.15 the arms dissolve into the disk instead of
+// trailing off as long solid ribbons; exactly identity below the
+// shoulder, and since the star mask CUBES this, the tail fragments into
+// sparse dots well before zero. (Start/strength tuned together with the
+// matching mild taper on the smoke arm so both arm systems end near
+// each other around ~1.5.) Exposed separately because the uArmFalloff
+// dissolution blends the full mask toward THIS envelope -- stars
+// scattered anywhere on the annulus, arm pattern gone.
+float armRadialFade(float r) {
+    float radialFade = exp(-r * 0.65) * exp(-0.07/r);
+    float ex = max(r - 1.15, 0.0);
+    return radialFade * exp(-ex * ex * 6.0);
 }
 
 float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
     float t = atan(p.y, p.x);
     float r = length(p) + 1e-4;
     float rw = spacingWarp(r);
-    float angularFit = pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw);
-    float radialFade = exp(-r * 0.65) * exp(-0.07/r);
-    // Outer taper: past r = 1.0 the arms dissolve into the disk instead of
-    // trailing off as long solid ribbons. Exactly identity below r = 1.0 so
-    // the inner spiral is untouched; beyond it a quadratic-exponent cutoff
-    // collapses the tail, and since the star mask CUBES this value, the tail
-    // fragments into sparse dimming dots well before the mask hits zero.
-    float ex = max(r - 1.0, 0.0);
-    radialFade *= exp(-ex * ex * 8.0);
-    return angularFit * radialFade;
+    return armProfile((theta(rw,wb,wn)-t)*n, aw, r) * armRadialFade(r);
+}
+
+// Dissolution weight: how much of the CUBED star mask blends toward the
+// isotropic annulus weight at this radius. This is the SECONDARY half of
+// the outer spread -- it fills the inter-arm gaps with stray stars, but
+// on its own it leaves the crest as narrow as ever (that is why the arms
+// still read as a thread until armProfile started widening the band too).
+// Deliberately weaker than the widening so the arms fatten and blur
+// rather than washing straight out into a uniform ring.
+float armDissolve(float r) {
+    return smoothstep(0.4, 1.15, r) * clamp(uArmSpread, 0.0, 1.0) * 0.55;
 }
 
 // Smoky galaxy body only: arms + dust + disk + a fixed central glow.
@@ -477,38 +618,6 @@ vec2 smokeMap(vec2 ps, vec2 pd){
     float glow = exp(-dot(ps,ps)*1.2*gInv) + 0.5*exp(-dot(pe,pe)*12.0*gInv);
     float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
     return vec2(armTerm, glowTerm);
-}
-
-// Truncated fbmabs for the GLOW layer only: 6 octaves instead of 8. The
-// drift feedback (p -= ... * r) only affects LATER octaves, so truncation
-// removes exactly the two finest terms -- amplitude <= 1/64 + 1/128 at
-// 0.2 weight inside a layer scaled by another ~0.14, i.e. far below one
-// 8-bit step. The ridged fbmdust/fbmdisk stacks are NOT reducible this
-// way (dropping an octave moves their ridge lines; measured up to
-// 32/255) -- they stay at full octaves everywhere.
-float fbmabsG(vec2 p) {
-    float f = 1.0;
-    float r = 0.0;
-    for (int i = 0; i < 6; i++) {
-        r += abs(noise(p*f))/f;
-        f *= 2.0;
-        p -= vec2(-0.01, 0.08)*r;
-    }
-    return r;
-}
-
-// The secondary GLOW layer's own smoke: identical to smokeMap except the
-// fbmabs grain runs the truncated variant above -- the b layer lands in
-// the frame scaled by 0.3 x 0.6 (boom) / 0.13 (normal), so the finest
-// grain octaves sit below what 8-bit output can even represent.
-float smokeMapGlow(vec2 ps, vec2 pd){
-    float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
-    float d = fbmdust(pd);
-    float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
-    vec2 pe = ps; pe.y -= 0.2;
-    float glow = exp(-dot(ps,ps)*1.2) + 0.5*exp(-dot(pe,pe)*12.0);
-    float glowTerm = glow*(0.7+0.2*d+0.2*fbmabsG(pd));
-    return max(armTerm, glowTerm);
 }
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
@@ -620,7 +729,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // dissipates quickly, fully gone by 0.03 as the core takes over --
     // the reference ends black behind the star swarm. Deliberately
     // non-linear: rest and most of the dive see exactly the full haze.
-    // Killing the haze also skips both smokeMap calls (the frame's
+    // Killing the haze also skips the smokeMap call (the frame's
     // heaviest work) at the very end -- the deepest zoom gets FASTER as
     // it gets darker.
     float hazeVis = smoothstep(0.03, 0.18, uZoom);
@@ -730,13 +839,20 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 aU = pBg - parVec * (sgn * hDisk);
             vec2 aOval = rotate(vec2(aU.x / ovA, aU.y * ovA), ang);
             vec2 aRot = rotate(aU, ang);
-            float aMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, aOval), 3.0);
+            float rAOv = length(aOval);
+            // Arm dissolution (uArmFalloff): blend the cubed mask toward
+            // the bare annulus weight -- outer stars scatter anywhere on
+            // the ring instead of hugging the ridge.
+            float aMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, aOval), 3.0),
+                              pow(armRadialFade(rAOv), 3.0) * 0.55, armDissolve(rAOv));
             // Skip the lattice wherever the mask/falloff already caps the
             // contribution below the 1/255 dither floor -- most of the
             // frame. Radially/arm-shaped regions, so the branch stays
             // spatially coherent.
             if (aMask > 0.0005) {
-                starsV = max(starsV, aMask * starField(aRot, 1.0, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5);
+                // wantAll = 1 with the arm-thinning roll on .x: at
+                // armStarKeep = 1 this is the exact old keep=1 field.
+                starsV = max(starsV, aMask * starField(aRot, 0.0, parRot, lo, hi, ang, pxCtl, 1.0, armStarKeep(length(aOval))).x * 1.5);
             }
             // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
             // footprint -- near-flat over the core, collapsing hard with
@@ -745,7 +861,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
             float bKeep = min(uBulge * 2.4 * exp(-dot(bRot, bRot) * 7.0), 1.0);
             if (bKeep > 0.003) {
-                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0).y * 1.5 * 0.8);
+                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0, 1.0).y * 1.5 * 0.8);
             }
         }
         // Floater sheets: sparse chunky strays at the largest heights --
@@ -758,7 +874,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // decides WHAT they look like -- stars trace the oval arms as
         // round dots. Bulge population shares the same lattice, so max()
         // never double-brightens a shared star.
-        float starMask = pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0);
+        float rOv = length(pOval);
+        // Arm dissolution (uArmFalloff): blend the cubed mask toward the
+        // bare annulus weight -- outer stars scatter anywhere on the ring
+        // instead of hugging the ridge ("loosened gravitational pull").
+        float starMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0),
+                             pow(armRadialFade(rOv), 3.0) * 0.55, armDissolve(rOv));
         // Gaussian PRESENCE falloff for the bulge/disk population,
         // CONCENTRATED at the center (reference: the core cluster is as
         // packed as the arm roots, and the between-arm sprinkle dies off
@@ -772,7 +893,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // stars): .x is the full field the arm mask weights, .y is the
         // bulgeKeep subset -- combined with the exact expressions the old
         // two full passes used, at half the lattice work.
-        vec2 sf = starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl, 1.0);
+        vec2 sf = starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl, 1.0, armStarKeep(length(pOval)));
         starsV = max(starMask * sf.x * 1.5, sf.y * 1.5 * 0.8);
     }
 
@@ -782,43 +903,39 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float k  = uCompactness * smoke * groundVis;              // smoky spiral body
     float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
     float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
-    bool glowOn = hazeMod > 0.001 && !inHole && uGlowLayer > 0.001;
-    float b = (glowOn ? uGlowLayer * hazeMod * 0.3 * smokeMapGlow(pOval*m2, p*m2) : 0.0) * groundVis; // secondary nebula glow layer
-
-
     float dist = length(pOval); // structural radius: tints/glows follow the oval
     float rCore = length(p);    // true radius: the core itself stays round
 
     // --- COMPUTE BOOM MODE ---
     // Dual-tone spiral: the inner region takes uCenterColor and blends into
     // uArmColor with radius, so the spiral body itself is two-toned. The
-    // soft secondary glow (the b layer) + corona are the nebula, tinted by
-    // uOuterHazeColor.
+    // corona + gas clouds are the nebula accents tinted by uOuterHazeColor.
+    // (The old soft "secondary glow" b layer -- a second smokeMap sampled
+    // in a rotated frame -- was REMOVED at the user's call after A/B'ing
+    // it with its slider; that also dropped a full smoke pass per pixel.)
     // Center tint fades out on a gaussian -- no visible edge, unlike a
     // smoothstep band which reads as a drawn circle. uCenterSpread sets
     // how far the tint reaches (weight = exp(-d^2/spread^2)).
     float centerW = exp(-(dist * dist) / (uCenterSpread * uCenterSpread));
     vec3 spiralHue = mix(uArmColor, uCenterColor, centerW);
     vec3 boomCol = spiralHue * (k * 0.8 + k * k * 0.2) +
-                   uStarColor * starsB +
-                   (uOuterHazeColor * (b * 0.6));
+                   uStarColor * starsB;
 
     vec3 boomLayer = clamp(boomCol, 0.0, 1.6);
     boomLayer += corona * uOuterHazeColor;
 
     // --- COMPUTE NORMAL MODE ---
     // Exact decomposition of the original grayscale formula
-    //   lum = (0.2*kA^2 + 0.7*kA + 0.4*b) / 3,  kA = k + sV
+    //   lum = (0.2*kA^2 + 0.7*kA) / 3,  kA = k + sV   (the 0.4*b glow term
+    //   left with the removed secondary glow layer)
     // split by source: expanding kA^2 = k^2 + 2*k*sV + sV^2, the body keeps
     // its own square, the star term absorbs the cross term (star-on-arm
-    // pixels lean toward the star color), and the glow layer stands alone.
-    // With all four normal colors equal the three terms sum back to exactly
-    // lum * tint -- the old look, bit for bit -- while different colors
-    // recolor only their own element.
+    // pixels lean toward the star color). With the colors equal the terms
+    // sum back to exactly lum * tint while different colors recolor only
+    // their own element.
     vec3 nHue = mix(uNormalArmColor, uNormalCenterColor, centerW);
     vec3 normalCol = nHue              * ((0.2 * k * k + 0.7 * k) / 3.0)
-                   + uNormalStarColor  * ((0.2 * (sV * sV + 2.0 * k * sV) + 0.7 * sV) / 3.0)
-                   + uNormalHazeColor  * (0.4 * b / 3.0);
+                   + uNormalStarColor  * ((0.2 * (sV * sV + 2.0 * k * sV) + 0.7 * sV) / 3.0);
     vec3 normalLayer = clamp(normalCol, 0.0, 1.6);
 
     // Gas-cloud gauze, tinted like the nebula in each mode. Added before

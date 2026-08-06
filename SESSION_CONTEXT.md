@@ -158,9 +158,10 @@ no multipass) so it ports 1:1 to Flutter's `FragmentProgram`.
 ## Current defaults (also the Reset state)
 
 ```
-uArmCount 2 · uArmWinding 16.0 · uArmSpacing 1.12 · uArmSmoke/uCoreGlow/uGlowLayer/uCorona 0.80 each · uGasClouds 0.20 · uBulge 0.50
-uDiskThickness 1.35 · uFlare 0.60 · uOvalness 1.00 · uCamTilt 1.27 · uRotSpeed 0.050 · uCompactness 1.50
-uStarDensity 3.29 · uMaxStarLod 2.0 · uTwinkleFraction 0.14 · uTwinkleSpeed 0.00
+uArmCount 2 · uArmWinding 17.0 · uArmSpacing 1.12 · uArmFalloff 0.12 · uArmSpread 0.55 · uArmEdgeSkew 0.6
+uArmSmoke 0.82 · uCoreGlow 1.0 · uCoreGlowSpread 0.83 · uCorona 0.80 · uGasClouds 0.16 · uBulge 1.5
+uDiskThickness 1.35 · uFlare 0.6 · uOvalness 1.02 · uCamTilt 1.27 · uRotSpeed 0.05 · uCompactness 1.74
+uStarDensity 3.48 · uMaxStarLod 2.0 · uTwinkleFraction 0.14 · uTwinkleSpeed 0.0
 uCoreMode 0 · uBlackHoleSize 0.049 · uCenterSpread 0.50
 boom:   center (0.294,0.376,0.569) · arm (0,0.482,1) · haze (0.259,0.345,1) · star (1,1,1)
 normal: center (0.886,0.878,1) · arm (0.639,0.651,1) · haze (1,1,1) · star (1,1,1)
@@ -454,3 +455,58 @@ transfer (all ALU, no textures):
     the multiplier 1 → bit-identical (verified 0 bytes across the 8-state
     harness). LAYOUT: +1 float at index 12, everything after shifts
     (55 → 56); table + prose regenerated and cross-checked.
+
+36. **Arm star spread — plateau rebuild** (`uArmSpread`, stars only).
+    Widening the band by LOWERING the profile exponent works, but the
+    same exponent also sets the profile's floor (0.739^k): dropping it
+    lifted the inter-arm floor and flooded the gaps (measured +21 % stars,
+    1712 lit gap pixels at full spread). Pinning the floor back down then
+    cancelled most of the widening — the slider degenerated into a dimmer
+    (user: "arm spread now does nothing except dimming"). Fixed by
+    changing the MECHANISM: the falloff is pushed OUTWARD by W radians,
+    giving a flat full-brightness plateau of half-width W with the
+    original edge steepness intact on both sides. Width and edge
+    sharpness are now independent, and the floor barely moves.
+    - `ARM_SPREAD_COMP` (0.60) thins the population in proportion to the
+      widening, so spreading REDISTRIBUTES stars instead of breeding them.
+      Calibrated empirically over four values (analytic first guess
+      over-thinned by 18 %).
+    - Measured: arm half-width 50° → 72° (1.44×), lit gap pixels
+      1712 → 92, total star count within ±3 %.
+37. **Arm edge skew** (`uArmEdgeSkew`, stars only) — one-sided falloff:
+    hard inner edge, feathered outer, the density-wave look (gas shocks
+    on the upstream edge, material trails downstream). The crest sits
+    where the normalised base == 1 and 1^k == 1 for ANY k, so the two
+    flanks run different exponents and still meet with continuous value
+    AND slope (the profile is quadratic-flat at its peak) — no seam, no
+    clip. Area-preserving pair: 1/sqrt(sIn) + 1/sqrt(sOut) == 2.
+    Inner/outer sign verified numerically (phase decreases with radius in
+    2000/2000 samples) — do not flip it blind. Measured flank ratio
+    0.75 → 1.67. Adds no stars (gap brightness unchanged).
+38. **Haze secondary glow REMOVED** (`uGlowLayer`, `smokeMapGlow`,
+    `fbmabsG` all deleted) at the user's call after A/B'ing it — drops a
+    full smoke pass per pixel (~10 % of the rest frame). Consequence:
+    `uOuterHazeColor` now tints only the corona and gas clouds, and the
+    battery-saver ladder's step 2 changed accordingly.
+39. **Snapshot button** — camera icon in the phone frame renders one
+    frame at up to 3× (4096 px cap) and shows it in an overlay to save
+    manually. The sandboxed artifact webview blocks anchor downloads, so
+    the direct download is best-effort only; the overlay always works.
+40. **Sync pass** — deliverables regenerated from the editor body
+    verbatim; galaxy.frag re-validated with glslangValidator; the Flutter
+    index table rebuilt programmatically from galaxy.frag's declaration
+    order (58 floats — layout shifted: uGlowLayer removed, three arm
+    uniforms added, boom palette now 33–44, normal 45–56).
+
+## Dev environment gotchas (added this round)
+
+- A GLSL helper must be DECLARED before first use: moving `armWiden`
+  below `armStarKeep` compiled to "no matching overloaded function" and
+  the canvas still rendered (stale program), so a screenshot alone does
+  NOT prove a shader compiled — check the browser console for errors.
+- Session interruptions have silently rolled the working file back mid-
+  edit at least once. Grep for a distinctive token from the change before
+  publishing or committing.
+- The artifact publish endpoint has been refusing UPDATES to existing
+  artifacts (403 on its verification read); publishing to a fresh file
+  path mints a new URL and works.

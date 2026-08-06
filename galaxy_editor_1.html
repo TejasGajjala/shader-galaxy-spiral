@@ -214,9 +214,10 @@ uniform float uArmEdgeSkew;     // one-sided arm falloff: hard, sharply
                                 // only -- crest brightness is unchanged
                                 // and nothing clips. STARS ONLY.
                                 // 0 = symmetric arms, bit-identical.
-// --- Nebula haze, split into four independently-scaled components (each
-// is amount x hazeMod x its own shape; 0 = that piece hidden). Stars are
-// separate. The old single uHaze == all four at the same value.
+// --- Nebula haze, split into independently-scaled components (each is
+// amount x hazeMod x its own shape; 0 = that piece hidden). Stars are
+// separate. The old single uHaze == all of these at the same value.
+// (A fourth component, the soft secondary glow layer, was removed.)
 uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
 uniform float uCoreGlow;        // broad bright haze at the nucleus
 uniform float uCoreGlowSpread;  // radial REACH of the core glow with the

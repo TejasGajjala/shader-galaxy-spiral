@@ -37,41 +37,43 @@ reorder declarations there without rebuilding this table.
 | 4 | `uFade` | 1.0 | 0 = black, used by the fade-back phase |
 | 5 | `uRotSpeed` | 0.05 | spin speed |
 | 6 | `uColorTransition` | 0.0 | 0 = normal palette, 1 = boom palette |
-| 7 | `uArmCount` | 2.0 | |
-| 8 | `uArmWinding` | 16.0 | |
-| 9 | `uArmSpacing` | 1.12 | |
-| 10 | `uArmSmoke` | 0.80 | haze: smoky filaments tracing the arms |
-| 11 | `uCoreGlow` | 0.80 | haze: broad bright glow at the nucleus |
-| 12 | `uCoreGlowSpread` | 1.0 | core glow radial reach; intensity stays pinned |
-| 13 | `uGlowLayer` | 0.80 | haze: soft diffuse secondary glow (b layer) |
-| 14 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
-| 15 | `uBulge` | 0.5 | grows the radius of the packed central cluster |
-| 16 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
-| 17 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
-| 18 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 19 | `uGasClouds` | 0.20 | drifting gas-cloud layer between windings |
-| 20 | `uOvalness` | 1.0 | |
-| 21 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
-| 22 | `uCompactness` | 1.5 | |
-| 23 | `uStarDensity` | 3.29 | |
-| 24 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
-| 25 | `uTwinkleFraction` | 0.14 | |
-| 26 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off |
-| 27 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
-| 28 | `uPxSize` | computed | AA floor — §7 |
-| 29 | `uCoreMode` | 0.0 | 0 = black hole, 1 = white core |
-| 30 | `uBlackHoleSize` | 0.049 | |
-| 31–33 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
-| 34–36 | `uArmColor` | 0.0, 0.482, 1.0 | boom |
-| 37–39 | `uOuterHazeColor` | 0.259, 0.345, 1.0 | boom |
-| 40–42 | `uStarColor` | 1.0, 1.0, 1.0 | boom |
-| 43–45 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
-| 46–48 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
-| 49–51 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
-| 52–54 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
-| 55 | `uCenterSpread` | 0.5 | |
+| 7 | `uArmCount` | 2 |  |
+| 8 | `uArmWinding` | 17.0 |  |
+| 9 | `uArmSpacing` | 1.12 | where the turns sit; does not change their count |
+| 10 | `uArmFalloff` | 0.12 | arm stars: outward density thinning (stars only) |
+| 11 | `uArmSpread` | 0.55 | arm stars: outward band widening, plateau (stars only) |
+| 12 | `uArmEdgeSkew` | 0.6 | arm stars: hard inner edge / feathered outer (stars only) |
+| 13 | `uArmSmoke` | 0.82 | haze: smoky filaments tracing the arms |
+| 14 | `uCoreGlow` | 1.0 | haze: broad bright glow at the nucleus |
+| 15 | `uCoreGlowSpread` | 0.83 | core glow radial reach; intensity stays pinned |
+| 16 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
+| 17 | `uBulge` | 1.5 | grows the radius of the packed central cluster |
+| 18 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
+| 19 | `uFlare` | 0.6 | star diffraction flares, final dive stretch |
+| 20 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
+| 21 | `uGasClouds` | 0.16 | drifting gas-cloud layer between windings |
+| 22 | `uOvalness` | 1.02 |  |
+| 23 | `uCamTilt` | 1.27 | radians off top-down; dive-animated — §6 |
+| 24 | `uCompactness` | 1.74 |  |
+| 25 | `uStarDensity` | 3.48 |  |
+| 26 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
+| 27 | `uTwinkleFraction` | 0.14 |  |
+| 28 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off (static per-star offsets) |
+| 29 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
+| 30 | `uPxSize` | computed | AA floor — §7 |
+| 31 | `uCoreMode` | 0 | 0 = black hole, 1 = white core |
+| 32 | `uBlackHoleSize` | 0.049 |  |
+| 33–35 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
+| 36–38 | `uArmColor` | 0.0, 0.482, 1.0 | boom |
+| 39–41 | `uOuterHazeColor` | 0.259, 0.345, 1.0 | boom |
+| 42–44 | `uStarColor` | 1.0, 1.0, 1.0 | boom |
+| 45–47 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
+| 48–50 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
+| 51–53 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
+| 54–56 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
+| 57 | `uCenterSpread` | 0.5 |  |
 
-Total: 56 floats.
+Total: 58 floats.
 
 ## 3. Painting
 
@@ -88,7 +90,7 @@ class GalaxyPainter extends CustomPainter {
     // NOTE: if the canvas is NOT drawn at physical resolution (no
     // canvas.scale(1/dpr)), pass logical pixels instead - iResolution
     // must match the coordinate space FlutterFragCoord() reports in.
-    driver.upload(shader, w, h);   // sets all 56 floats
+    driver.upload(shader, w, h);   // sets all 58 floats
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
 
@@ -104,7 +106,7 @@ Drive repaints with a `Ticker`; feed its elapsed time to the driver.
 The shader takes **two independent time uniforms**. Getting these right is
 what makes the dive feel correct:
 
-- **`uTwinkleTime` (idx 27)** — plain wall-clock seconds. Always advances
+- **`uTwinkleTime` (idx 29)** — plain wall-clock seconds. Always advances
   at real time, even mid-dive.
 - **`iTime` (idx 2)** — the rotation clock (`shaderTime`). It advances at
   **1× wall time at rest**, and during the zoom phase of the dive it runs
@@ -200,7 +202,7 @@ double currentTilt() {
   final dp = (1.0 - zoom).clamp(0.0, 1.0);
   const e0 = 1.0 / 1024.0;                       // 2^-10
   final eased = (math.pow(2.0, 10.0 * (dp - 1.0)) - e0) / (1.0 - e0);
-  return camTiltSlider * (1.0 - 0.40 * eased);   // -> uCamTilt (idx 21)
+  return camTiltSlider * (1.0 - 0.40 * eased);   // -> uCamTilt (idx 23)
 }
 ```
 
@@ -255,8 +257,8 @@ the perspective foreshortening of the old squash factor.)
   fully skipped.
 - **Haze cost is per-layer on/off, not proportional.** Slider values are
   post-multipliers; the noise runs at any value above 0. Exactly 0 trips
-  the skip: `uArmSmoke`+`uCoreGlow` share one gate (both must be 0 to
-  skip their smoke pass), `uGlowLayer` has its own, `uCorona` is ~free.
+  the skip: `uArmSmoke`+`uCoreGlow` share one gate (both must be 0 to skip their
+  smoke pass), `uCorona` is ~free.
 
 ## 9. Low-battery / power-saver mode
 
@@ -271,7 +273,7 @@ is independent and reversible when power returns:
 | step | change | saves | visible cost |
 |---|---|---|---|
 | 1 | Rest frame pacing 30 → 24 fps (dive 60 → 30) | large, battery-first | none per frame; dive slightly less silky |
-| 2 | `uGlowLayer = 0` | ~10 % of the rest frame (skips one full smoke pass) | subtle: nebula loses its soft outer bloom |
+| 2 | `uArmSmoke` or `uCoreGlow` = 0 | skips the smoke pass when BOTH are 0 (~10 % of the rest frame) | nebula loses its filaments or its nucleus glow |
 | 3 | Cap render DPR at 2.0 (or 1.5) | biggest single lever (fill-rate scales with pixel count) | mild softness, hidden by motion |
 | 4 | `uDiskThickness = 0` | ~20 % of the rest frame (flat star path) | 3D rim/parallax gone — flat but clean look |
 | 5 | `uMaxStarLod = 1.0` | flattens the mid-dive cost spike (the LOD cross-fade is the most expensive frame) | late dive refills fewer stars |
@@ -286,9 +288,9 @@ DPR you actually render at (§7), and restore everything when
 ## 10. Palette / mode cheat sheet
 
 - **Normal mode**: `uColorTransition = 0`, `uCoreMode = 0` (black hole),
-  normal palette at indices 43–54.
+  normal palette at indices 45–56.
 - **Boom mode**: `uColorTransition = 1`, `uCoreMode = 1` (white core),
-  boom palette at indices 31–42.
+  boom palette at indices 33–44.
 - A dive **into** boom: start in normal, `startDive(toBoom: true)` — the
   palette and core swap happen automatically behind the fade. The editor's
   instant-mode buttons are just these same swaps without the dive.
