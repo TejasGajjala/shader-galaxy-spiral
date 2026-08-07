@@ -667,8 +667,16 @@ float armProfile(float phase, float aw, float r) {
     // Plateau: hold full crest brightness across |d| < W, then run the
     // ORIGINAL falloff from there outward. sin(-PI/2 + x) == -cos(x), so
     // the shifted profile is just (1 + 0.15*cos(|d| - W)) / 1.15.
+    // ...and the plateau leans with the skew. A flat top centred on the
+    // crest is a symmetric pedestal the exponent skew below cannot touch,
+    // so it dilutes the asymmetry badly: at spread 0.55 the flank ratio
+    // fell from 3.3:1 (no plateau) to 1.8:1, which is why max skew read as
+    // weak. Slide the SAME total plateau outward instead -- Wout + Win
+    // stays 2W, so the cross-section is untouched -- and at full skew the
+    // flat top starts right at the crest and runs outward only.
     float W  = w * 1.15;
-    float ad = max(abs(d) - W, 0.0);
+    float Wd = W * (1.0 + sk * (1.0 - 2.0 * step(0.0, d)));
+    float ad = max(abs(d) - Wd, 0.0);
     float base = (1.0 + 0.15*cos(ad)) / 1.15;
 
     // Asymmetric flanks (uArmEdgeSkew) -- the density-wave look: gas piles
@@ -692,8 +700,10 @@ float armProfile(float phase, float aw, float r) {
     // and the skew leave behind: remap this profile's [trough, crest] onto
     // the ORIGINAL arm's [trough, crest] so the gaps between arms stay
     // exactly as dark as they were. baseMin is the true minimum of the
-    // shifted profile (at |d| = PI), so the mapping is exact.
-    float baseMin = (1.0 - 0.15*cos(W)) / 1.15;
+    // shifted profile (at |d| = PI), so the mapping is exact -- per side,
+    // since the two flanks now run different plateaus. The crest stays
+    // seamless regardless: base == 1 there, and f(1) == 1 for any lo.
+    float baseMin = (1.0 - 0.15*cos(Wd)) / 1.15;
     float lo    = pow(baseMin, K);
     float loRef = exp(-0.302283 * aw);
     float f = (pow(base, K) - lo) / (1.0 - lo) * (1.0 - loRef) + loRef;
