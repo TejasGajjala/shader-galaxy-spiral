@@ -690,9 +690,17 @@ float armProfile(float phase, float aw, float r) {
     // the cross-section while the flanks trade sharpness for feathering.
     float K = aw;
     if (sk >= 0.001) {
-        float a = 1.0 - 0.7 * sk;               // inner half-width factor
-        float b = 1.0 + 0.7 * sk;               // outer half-width factor
-        float side = smoothstep(-0.8, 0.8, d);  // 0 = outer flank, 1 = inner
+        float a = 1.0 - 0.85 * sk;              // inner half-width factor
+        float b = 1.0 + 0.85 * sk;              // outer half-width factor
+        // Blend zone deliberately NARROW. It used to span +-0.8 rad, but at
+        // full skew the inner edge falls off within ~0.15 rad of the crest,
+        // so the flank was still only ~3/4 of the way to its steep exponent
+        // by the time it had already faded -- the sharpening was being spent
+        // out in the tail where nothing is visible. Tightening it costs
+        // nothing (the crest is flat in value and slope regardless of K, so
+        // there is still no seam) and lets each flank reach its real
+        // exponent where it actually shows.
+        float side = smoothstep(-0.3, 0.3, d);  // 0 = outer flank, 1 = inner
         K = mix(aw / (b * b), aw / (a * a), side);
     }
 
