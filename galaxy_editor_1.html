@@ -756,33 +756,37 @@ float arm(float n, float aw, float wb, float wn, vec2 p){
     float t = atan(p.y, p.x);
     float r = length(p) + 1e-4;
     float rw = spacingWarp(r);
-    // Mild outer taper from the same r = 1.15 shoulder as the star arms,
-    // so the smoke stops trailing ~0.4 beyond the last visible stars --
-    // the two arm lengths now end near each other (~1.5-1.6), gas just
-    // slightly past the stellar disk. Identity below the shoulder.
-    float ex = max(r - 1.15, 0.0);
+    // Hard outer taper, shoulder well INSIDE the star arms' (1.0 vs 1.25):
+    // the smoke sheet is gone by r ~ 1.25 while the star arms run on to
+    // ~1.55, so the outer star tail sits on plain black with no haze
+    // backdrop. (This deliberately reverses the old near-parity tuning,
+    // where the smoke veil outlived the last stars by ~0.3.) Identity
+    // below the shoulder.
+    float ex = max(r - 1.0, 0.0);
     // NOTE: the smoke arm keeps the plain fixed-WIDTH profile on purpose.
     // The outward widening lives ONLY on the star arms (armAngleMask ->
     // armProfile) -- spreading the smoke too made the whole nebula fatten,
     // which is not what was wanted: the gas keeps its shape, the stars
     // come loose from it. Edge SKEW, though, is available to the smoke as
     // its own control (smokeProfile / uSmokeSkew).
-    return smokeProfile((theta(rw,wb,wn)-t)*n, aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*3.0);
+    return smokeProfile((theta(rw,wb,wn)-t)*n, aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*10.0);
 }
 
 // Radial envelope of the STAR arms alone (no angular structure). Outer
-// taper: past r = 1.15 the arms dissolve into the disk instead of
+// taper: past r = 1.25 the arms dissolve into the disk instead of
 // trailing off as long solid ribbons; exactly identity below the
 // shoulder, and since the star mask CUBES this, the tail fragments into
-// sparse dots well before zero. (Start/strength tuned together with the
-// matching mild taper on the smoke arm so both arm systems end near
-// each other around ~1.5.) Exposed separately because the uArmFalloff
-// dissolution blends the full mask toward THIS envelope -- stars
-// scattered anywhere on the annulus, arm pattern gone.
+// sparse dots well before zero. Deliberately gentler and later than the
+// smoke arm's taper (shoulder 1.25/coeff 3 vs 1.0/coeff 10): the stars
+// are the OUTERMOST structure, running to ~1.55 as scattered dots on
+// plain black after the smoke sheet has already died at ~1.25. Exposed
+// separately because the uArmFalloff dissolution blends the full mask
+// toward THIS envelope -- stars scattered anywhere on the annulus, arm
+// pattern gone.
 float armRadialFade(float r) {
     float radialFade = exp(-r * 0.65) * exp(-0.07/r);
-    float ex = max(r - 1.15, 0.0);
-    return radialFade * exp(-ex * ex * 6.0);
+    float ex = max(r - 1.25, 0.0);
+    return radialFade * exp(-ex * ex * 3.0);
 }
 
 float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
