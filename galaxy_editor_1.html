@@ -163,6 +163,7 @@
   <div id="color-controls" class="grid"></div>
   <div id="actions">
     <button id="reset-btn">Reset to defaults</button>
+    <button id="candidate-btn">Reference candidate</button>
     <button id="copy-btn">Copy GLSL values</button>
     <button id="apply-btn">Apply edited values</button>
     <span id="copy-status" style="font-size:12px;color:rgba(255,255,255,0.5);"></span>
@@ -219,6 +220,13 @@ uniform float uArmEdgeSkew;     // one-sided arm falloff: hard, sharply
 // separate. The old single uHaze == all of these at the same value.
 // (A fourth component, the soft secondary glow layer, was removed.)
 uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
+uniform float uSmokeSkew;       // one-sided falloff for the SMOKE arms:
+                                // the same hard-inner/feathered-outer
+                                // flank trade as uArmEdgeSkew, minus the
+                                // width plateau (smoke keeps its fixed
+                                // width on purpose). Lets gas and stars
+                                // agree on which side is the shock front.
+                                // 0 = symmetric smoke, bit-identical.
 uniform float uCoreGlow;        // broad bright haze at the nucleus
 uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
                                 // center intensity pinned (gaussian width
@@ -718,6 +726,33 @@ float armProfile(float phase, float aw, float r) {
     return f * P;
 }
 
+// Angular cross-section of the SMOKE arms: armProfile's edge skew without
+// its width plateau -- the smoke keeps its fixed width on purpose (see the
+// NOTE in arm()), but uSmokeSkew sharpens its inner edge and feathers its
+// outer edge by the same area-preserving flank-exponent trade the stars
+// use, so the gas can agree with the stars about which side of the arm is
+// the shock front. Same trough pinning: at |d| = pi both flanks land on
+// the plain profile's floor (pow(base,K) == lo there for either K), so the
+// gaps hold their darkness AND the two flanks meet seamlessly mid-gap.
+// The crest is exact for the same reason as armProfile: base == 1 there
+// and the remap maps 1 to 1 for any flank exponent.
+float smokeProfile(float phase, float aw) {
+    float sk = clamp(uSmokeSkew, 0.0, 1.0);
+    // Skew idle -> the original expression, bit for bit.
+    if (sk < 0.001) return pow(1.0 - 0.15*sin(phase), aw);
+    // Signed angular distance from the crest (phase = -PI/2), [-PI, PI].
+    float d = mod(phase + 1.5707963 + 3.1415927, 6.2831853) - 3.1415927;
+    float base = (1.0 + 0.15*cos(d)) / 1.15;
+    float a = 1.0 - 0.85 * sk;              // inner half-width factor
+    float b = 1.0 + 0.85 * sk;              // outer half-width factor
+    float side = smoothstep(-0.3, 0.3, d);  // 0 = outer flank, 1 = inner
+    float K = mix(aw / (b * b), aw / (a * a), side);
+    float lo    = pow(0.7391304, K);        // trough of base: (1-0.15)/1.15
+    float loRef = exp(-0.302283 * aw);      // same trough at the plain aw
+    float f = (pow(base, K) - lo) / (1.0 - lo) * (1.0 - loRef) + loRef;
+    return f * pow(1.15, aw);
+}
+
 float arm(float n, float aw, float wb, float wn, vec2 p){
     float t = atan(p.y, p.x);
     float r = length(p) + 1e-4;
@@ -727,12 +762,13 @@ float arm(float n, float aw, float wb, float wn, vec2 p){
     // the two arm lengths now end near each other (~1.5-1.6), gas just
     // slightly past the stellar disk. Identity below the shoulder.
     float ex = max(r - 1.15, 0.0);
-    // NOTE: the smoke arm keeps the plain fixed-width profile on purpose.
+    // NOTE: the smoke arm keeps the plain fixed-WIDTH profile on purpose.
     // The outward widening lives ONLY on the star arms (armAngleMask ->
     // armProfile) -- spreading the smoke too made the whole nebula fatten,
     // which is not what was wanted: the gas keeps its shape, the stars
-    // come loose from it.
-    return pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*3.0);
+    // come loose from it. Edge SKEW, though, is available to the smoke as
+    // its own control (smokeProfile / uSmokeSkew).
+    return smokeProfile((theta(rw,wb,wn)-t)*n, aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*3.0);
 }
 
 // Radial envelope of the STAR arms alone (no angular structure). Outer
@@ -1186,11 +1222,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uArmSmoke','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 17.0, armSpacing: 1.12, armFalloff: 0.12, armSpread: 0.55, armEdgeSkew: 0.6,
-    armSmoke: 0.82, coreGlow: 1.0, coreGlowSpread: 0.83, corona: 0.80, gasClouds: 0.16, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 0.6, ovalness: 1.02, camTilt: 1.27, rotSpeed: 0.05,
+    armSmoke: 0.82, smokeSkew: 0.0, coreGlow: 1.0, coreGlowSpread: 0.83, corona: 0.80, gasClouds: 0.16, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 0.6, ovalness: 1.02, camTilt: 1.27, rotSpeed: 0.05,
     compactness: 1.74, starDensity: 3.48, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
     coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5, zoomEase: 0.75,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
@@ -1198,11 +1234,22 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','armSmoke','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
+  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
+  // Reference-look CANDIDATE for the current tuning round: applied on load
+  // (so the page opens on the look under judgment) but deliberately NOT
+  // folded into DEFAULTS -- "Reset to defaults" still returns to the
+  // established tuning, and the "Reference candidate" button re-applies
+  // this. Fold into DEFAULTS (and delete this block) if adopted.
+  const CANDIDATE = {
+    armWinding: 11.0, armSpacing: 1.35, armEdgeSkew: 0.90, armSpread: 0.30,
+    armSmoke: 0.65, coreGlow: 0.45, coreGlowSpread: 0.35, gasClouds: 0.06,
+    bulgeAmount: 0.55, diskThickness: 0.70, starDensity: 4.2, compactness: 1.60
+  };
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
   KEYS.forEach(k => state[k] = DEFAULTS[k]);
+  Object.assign(state, CANDIDATE);
   state.coreMode = DEFAULTS.coreMode; // toggle, not a slider
 
   const STRUCT = [
@@ -1213,8 +1260,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armSpread',       label: 'Arm star spread',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armEdgeSkew',     label: 'Arm edge skew',      min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armSmoke',        label: 'Haze: arm smoke',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'smokeSkew',       label: 'Smoke edge skew',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'coreGlow',        label: 'Haze: core glow',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
-    { key: 'coreGlowSpread',  label: 'Core glow spread',   min: 0.4,  max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'coreGlowSpread',  label: 'Core glow spread',   min: 0.3,  max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'corona',          label: 'Haze: corona',       min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'gasClouds',       label: 'Gas clouds',         min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
@@ -1224,7 +1272,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'camTilt',         label: 'Camera tilt',        min: 0.0,  max: 1.45, step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'rotSpeed',        label: 'Rotation speed',     min: 0,    max: 0.1,  step: 0.001, fmt: v => v.toFixed(3) },
     { key: 'compactness',     label: 'Compactness',        min: 0.5,  max: 3.0,  step: 0.01,  fmt: v => v.toFixed(2) },
-    { key: 'starDensity',     label: 'Star density',       min: 0,    max: 4,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'starDensity',     label: 'Star density',       min: 0,    max: 5,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'maxStarLod',      label: 'Max star refill',    min: 0,    max: 6,    step: 0.1,   fmt: v => v.toFixed(1) },
     { key: 'twinkleFraction', label: 'Twinkle amount',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'twinkleSpeed',    label: 'Twinkle speed',      min: 0,    max: 8,    step: 0.05,  fmt: v => v.toFixed(2) },
@@ -1254,7 +1302,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
   const UNIFORM_TO_KEY = {
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing', uArmFalloff: 'armFalloff', uArmSpread: 'armSpread', uArmEdgeSkew: 'armEdgeSkew',
-    uArmSmoke: 'armSmoke', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
+    uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
     uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
     uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
     uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
@@ -1384,6 +1432,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uArmSpread       = ' + state.armSpread.toFixed(2) + ';',
       'uArmEdgeSkew     = ' + state.armEdgeSkew.toFixed(2) + ';',
       'uArmSmoke        = ' + state.armSmoke.toFixed(2) + ';',
+      'uSmokeSkew       = ' + state.smokeSkew.toFixed(2) + ';',
       'uCoreGlow        = ' + state.coreGlow.toFixed(2) + ';',
       'uCoreGlowSpread  = ' + state.coreGlowSpread.toFixed(2) + ';',
       'uCorona          = ' + state.corona.toFixed(2) + ';',
@@ -1421,6 +1470,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uArmSpread, state.armSpread);
     gl.uniform1f(U.uArmEdgeSkew, state.armEdgeSkew);
     gl.uniform1f(U.uArmSmoke, state.armSmoke);
+    gl.uniform1f(U.uSmokeSkew, state.smokeSkew);
     gl.uniform1f(U.uCoreGlow, state.coreGlow);
     gl.uniform1f(U.uCoreGlowSpread, state.coreGlowSpread);
     gl.uniform1f(U.uCorona, state.corona);
@@ -1456,18 +1506,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (document.activeElement !== glslOut) glslOut.value = glslText();
   }
 
-  document.getElementById('reset-btn').addEventListener('click', () => {
+  // Shared by "Reset to defaults" and "Reference candidate": both start
+  // from DEFAULTS so the result is deterministic regardless of what was
+  // dialled in between; the candidate then overlays its value set.
+  function applyPreset(overrides) {
     COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
     KEYS.forEach(k => state[k] = DEFAULTS[k]);
+    if (overrides) Object.assign(state, overrides);
     // Core style follows the currently active mode (black hole in normal,
     // white core in boom), not a fixed default -- resetting sliders/colors
     // shouldn't silently flip the core away from the mode you're in.
     state.coreMode = colorTransition > 0.5 ? 1 : 0;
     updateCoreBtnLook();
     buildControls(); sync();
-    glslOut.blur(); // resetting is explicit intent to discard any pending edit
+    glslOut.blur(); // presets are explicit intent to discard any pending edit
     glslOut.value = glslText();
-  });
+  }
+  document.getElementById('reset-btn').addEventListener('click', () => applyPreset(null));
+  document.getElementById('candidate-btn').addEventListener('click', () => applyPreset(CANDIDATE));
   document.getElementById('copy-btn').addEventListener('click', async () => {
     const status = document.getElementById('copy-status');
     try { await navigator.clipboard.writeText(glslText()); status.textContent = 'Copied'; }
