@@ -1046,7 +1046,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (inHole) {
         starsV = 0.0;
     } else if (uDiskThickness > 0.001) {
-        float hDisk  = uDiskThickness * 0.008;  // arm slab half-height
+        // Rim height taper on the ARM slab: sheet footprints separate by
+        // 2*h*parVec, and parVec grows ~1/denom toward the far rim -- at
+        // high tilt the two half-population sheets end up sampled ~0.4 r
+        // apart out there. While smoke covered the rim and the star
+        // annulus died by ~1.4 that read as thickness; with the outer band
+        // now naked scattered stars (armRadialFade to ~1.55), each sheet's
+        // rim became its own legible edge -- "two sheets of paper". Collapse
+        // the slab toward a single plane across exactly that naked band:
+        // full height inside r = 1.0 (bit-identical there), 15% by r = 1.5.
+        // Driven by the PIXEL's plane radius, so both sheets converge
+        // symmetrically and the lo/hi population split is untouched. The
+        // bulge keeps its full height (its gaussian is dead out there), and
+        // the floater strays stay detached by design.
+        float hEnv   = 1.0 - 0.85 * smoothstep(1.0, 1.5, length(pOval));
+        float hDisk  = uDiskThickness * 0.008 * hEnv;  // arm slab half-height
         float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
         starsV = 0.0;
         for (int s = 0; s < 2; s++) {
