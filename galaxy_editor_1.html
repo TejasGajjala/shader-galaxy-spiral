@@ -824,12 +824,15 @@ vec2 smokeMap(vec2 ps, vec2 pd){
     float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
     float d = fbmdust(pd);
     float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
-    vec2 pe = ps; pe.y -= 0.2;
     // uCoreGlowSpread scales the WIDTH of both glow gaussians (dividing
     // the exponent) with their peaks untouched -- reach and intensity are
     // independent controls. At 1.0 the multiplier is exactly 1: identity.
+    // Both gaussians are CENTRED on the nucleus. The tight one used to sit
+    // at a fixed 0.2 offset (a V1 relic) -- in the rotating pattern frame,
+    // so it read as a bright blob slowly orbiting the black hole, obvious
+    // once uCoreGlowSpread tightened the halo around it.
     float gInv = 1.0 / (uCoreGlowSpread * uCoreGlowSpread);
-    float glow = exp(-dot(ps,ps)*1.2*gInv) + 0.5*exp(-dot(pe,pe)*12.0*gInv);
+    float glow = exp(-dot(ps,ps)*1.2*gInv) + 0.5*exp(-dot(ps,ps)*12.0*gInv);
     float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
     return vec2(armTerm, glowTerm);
 }
