@@ -163,7 +163,6 @@
   <div id="color-controls" class="grid"></div>
   <div id="actions">
     <button id="reset-btn">Reset to defaults</button>
-    <button id="candidate-btn">Reference candidate</button>
     <button id="copy-btn">Copy GLSL values</button>
     <button id="apply-btn">Apply edited values</button>
     <span id="copy-status" style="font-size:12px;color:rgba(255,255,255,0.5);"></span>
@@ -1236,20 +1235,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   };
   const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
-  // Reference-look CANDIDATE for the current tuning round: applied on load
-  // (so the page opens on the look under judgment) but deliberately NOT
-  // folded into DEFAULTS -- "Reset to defaults" still returns to the
-  // established tuning, and the "Reference candidate" button re-applies
-  // this. Fold into DEFAULTS (and delete this block) if adopted.
-  const CANDIDATE = {
-    armWinding: 11.0, armSpacing: 1.35, armEdgeSkew: 0.90, armSpread: 0.30,
-    armSmoke: 0.65, coreGlow: 0.45, coreGlowSpread: 0.35, gasClouds: 0.06,
-    bulgeAmount: 0.55, diskThickness: 0.70, starDensity: 4.2, compactness: 1.60
-  };
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
   KEYS.forEach(k => state[k] = DEFAULTS[k]);
-  Object.assign(state, CANDIDATE);
   state.coreMode = DEFAULTS.coreMode; // toggle, not a slider
 
   const STRUCT = [
@@ -1506,24 +1494,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (document.activeElement !== glslOut) glslOut.value = glslText();
   }
 
-  // Shared by "Reset to defaults" and "Reference candidate": both start
-  // from DEFAULTS so the result is deterministic regardless of what was
-  // dialled in between; the candidate then overlays its value set.
-  function applyPreset(overrides) {
+  document.getElementById('reset-btn').addEventListener('click', () => {
     COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
     KEYS.forEach(k => state[k] = DEFAULTS[k]);
-    if (overrides) Object.assign(state, overrides);
     // Core style follows the currently active mode (black hole in normal,
     // white core in boom), not a fixed default -- resetting sliders/colors
     // shouldn't silently flip the core away from the mode you're in.
     state.coreMode = colorTransition > 0.5 ? 1 : 0;
     updateCoreBtnLook();
     buildControls(); sync();
-    glslOut.blur(); // presets are explicit intent to discard any pending edit
+    glslOut.blur(); // resetting is explicit intent to discard any pending edit
     glslOut.value = glslText();
-  }
-  document.getElementById('reset-btn').addEventListener('click', () => applyPreset(null));
-  document.getElementById('candidate-btn').addEventListener('click', () => applyPreset(CANDIDATE));
+  });
   document.getElementById('copy-btn').addEventListener('click', async () => {
     const status = document.getElementById('copy-status');
     try { await navigator.clipboard.writeText(glslText()); status.textContent = 'Copied'; }
