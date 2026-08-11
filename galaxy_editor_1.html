@@ -1026,8 +1026,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // stretches past the rim; thins at the very center so the core
         // glow stays clean.
         float cEnv = smoothstep(1.35, 0.95, rc) * smoothstep(0.10, 0.40, rc);
+        // 0.275 gain: halved from 0.55 so the full slider range maps to a
+        // subtler layer -- slider 1.0 now gives what 0.5 used to.
         gas = uGasClouds * band * breakup * (0.85 + 0.15 * n2) * cEnv
-            * cloudVis * uHazePulse * 0.55;
+            * cloudVis * uHazePulse * 0.275;
     }
     // Stars. Flat path (uDiskThickness = 0): the original single-plane
     // field, bit for bit, zero extra cost. Thick path: the SAME arm and
