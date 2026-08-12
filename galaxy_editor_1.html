@@ -236,6 +236,13 @@ uniform float uArmWobble;       // organic imperfection: a static noise
 // separate. The old single uHaze == all of these at the same value.
 // (A fourth component, the soft secondary glow layer, was removed.)
 uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
+uniform float uSmokeCore;       // inner-arm flare: extra brightness on
+                                // the smoke where the arms leave the core
+                                // (peaks ~a tenth of the way out, spent by
+                                // a third), so the arm roots outshine the
+                                // outer windings instead of matching them.
+                                // ARM smoke only -- not the core glow.
+                                // 0 = flat arm curve, bit-identical.
 uniform float uSmokeSkew;       // one-sided falloff for the SMOKE arms:
                                 // the same hard-inner/feathered-outer
                                 // flank trade as uArmEdgeSkew, minus the
@@ -882,6 +889,15 @@ vec2 smokeMap(vec2 ps, vec2 pd){
     float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
     float d = fbmdust(pd);
     float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
+    // Inner-arm flare (uSmokeCore): lift the gas where the arms leave the
+    // core so the arm ROOTS are the brightest gas in the galaxy. The bare
+    // arm curve does fall outward, but only about 2x across the visible
+    // disk, which reads as evenly lit -- this puts a real peak on it. A
+    // gaussian on radius centred at r = 0.18 (roughly a tenth of the way
+    // out) and narrow enough that it is spent by r ~ 0.45, so the mid and
+    // outer windings are untouched. Multiplies the ARM term only: the core
+    // glow is a separate component and keeps its own controls.
+    armTerm *= 1.0 + uSmokeCore * 3.0 * exp(-pow((length(ps) - 0.18) / 0.13, 2.0));
     // uCoreGlowSpread scales the WIDTH of both glow gaussians (dividing
     // the exponent) with their peaks untouched -- reach and intensity are
     // independent controls. At 1.0 the multiplier is exactly 1: identity.
@@ -1302,11 +1318,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uSmokeCore','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 18.5, armSpacing: 1.12, armFalloff: 0.70, armSpread: 0.61, armEdgeSkew: 1.0, rimCoarse: 0.0, armWobble: 0.0,
-    armSmoke: 0.74, smokeSkew: 0.5, coreGlow: 1.0, coreGlowSpread: 0.74, corona: 0.80, gasClouds: 0.22, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 1.0, ovalness: 1.05, camTilt: 1.26, rotSpeed: 0.036,
+    armSmoke: 0.74, smokeSkew: 0.5, smokeCore: 0.6, coreGlow: 1.0, coreGlowSpread: 0.74, corona: 0.80, gasClouds: 0.22, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 1.0, ovalness: 1.05, camTilt: 1.26, rotSpeed: 0.036,
     compactness: 1.88, starDensity: 3.48, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
     coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5, zoomEase: 0.75,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
@@ -1314,7 +1330,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
+  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','smokeCore','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -1332,6 +1348,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armWobble',       label: 'Arm wobble',         min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armSmoke',        label: 'Haze: arm smoke',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'smokeSkew',       label: 'Smoke edge skew',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'smokeCore',       label: 'Smoke inner flare',  min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'coreGlow',        label: 'Haze: core glow',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'coreGlowSpread',  label: 'Core glow spread',   min: 0.3,  max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'corona',          label: 'Haze: corona',       min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
@@ -1374,7 +1391,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   const UNIFORM_TO_KEY = {
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing', uArmFalloff: 'armFalloff', uArmSpread: 'armSpread', uArmEdgeSkew: 'armEdgeSkew',
     uRimCoarse: 'rimCoarse', uArmWobble: 'armWobble',
-    uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
+    uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uSmokeCore: 'smokeCore', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
     uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
     uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
     uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
@@ -1507,6 +1524,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uArmWobble       = ' + state.armWobble.toFixed(2) + ';',
       'uArmSmoke        = ' + state.armSmoke.toFixed(2) + ';',
       'uSmokeSkew       = ' + state.smokeSkew.toFixed(2) + ';',
+      'uSmokeCore       = ' + state.smokeCore.toFixed(2) + ';',
       'uCoreGlow        = ' + state.coreGlow.toFixed(2) + ';',
       'uCoreGlowSpread  = ' + state.coreGlowSpread.toFixed(2) + ';',
       'uCorona          = ' + state.corona.toFixed(2) + ';',
@@ -1547,6 +1565,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uArmWobble, state.armWobble);
     gl.uniform1f(U.uArmSmoke, state.armSmoke);
     gl.uniform1f(U.uSmokeSkew, state.smokeSkew);
+    gl.uniform1f(U.uSmokeCore, state.smokeCore);
     gl.uniform1f(U.uCoreGlow, state.coreGlow);
     gl.uniform1f(U.uCoreGlowSpread, state.coreGlowSpread);
     gl.uniform1f(U.uCorona, state.corona);
