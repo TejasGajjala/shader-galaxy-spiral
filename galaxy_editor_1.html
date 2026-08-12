@@ -1548,10 +1548,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
       'uCoreMode        = ' + (state.coreMode > 0.5 ? '1.0' : '0.0') + ';',
       'uBlackHoleSize   = ' + state.blackHoleSize.toFixed(3) + ';',
+      // The two palettes are easy to mix up in this block, because the
+      // BOOM set is the unprefixed one -- the opposite of what the names
+      // suggest. Label them so it is unambiguous which is which.
+      '',
+      '// --- BOOM palette (the coloured dive state, uColorTransition = 1) ---',
       'uCenterColor     = ' + fmtVec(state.center) + ';',
       'uArmColor        = ' + fmtVec(state.arm) + ';',
       'uOuterHazeColor  = ' + fmtVec(state.haze) + ';',
       'uStarColor       = ' + fmtVec(state.star) + ';',
+      '',
+      '// --- NORMAL palette (the resting state, uColorTransition = 0) ---',
       'uNormalCenterColor = ' + fmtVec(state.normalCenter) + ';',
       'uNormalArmColor    = ' + fmtVec(state.normalArm) + ';',
       'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
