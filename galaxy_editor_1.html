@@ -163,6 +163,7 @@
   <div id="color-controls" class="grid"></div>
   <div id="actions">
     <button id="reset-btn">Reset to defaults</button>
+    <button id="random-btn">Randomise</button>
     <button id="copy-btn">Copy GLSL values</button>
     <button id="apply-btn">Apply edited values</button>
     <span id="copy-status" style="font-size:12px;color:rgba(255,255,255,0.5);"></span>
@@ -1596,6 +1597,72 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     glslOut.blur(); // resetting is explicit intent to discard any pending edit
     glslOut.value = glslText();
   });
+  // ---- Randomise: one click = a fresh plausible galaxy. Ranges are
+  // deliberately NARROWER than the sliders where the extremes stop
+  // reading as a galaxy (winding, oval, disk) or get expensive (density,
+  // thickness) -- this is a variety explorer, not a fuzzer. DEFAULTS is
+  // never touched: un-randomised keys (dive/perf params like zoomEase,
+  // maxStarLod, twinkle speed, core mode) reset to their defaults so
+  // every roll starts from the same base, and "Reset to defaults"
+  // returns to the stock galaxy exactly as before.
+  const RANDOM_RANGES = {
+    armCount:       [2, 6, 1],        // int step
+    armWinding:     [6, 24, 0.5],
+    armSpacing:     [0.75, 1.55, 0.01],
+    armFalloff:     [0.05, 0.95, 0.01],
+    armSpread:      [0, 1, 0.01],
+    armEdgeSkew:    [0, 1, 0.01],
+    rimCoarse:      [0, 1, 0.01],
+    armWobble:      [0, 0.9, 0.01],
+    armSmoke:       [0.25, 1, 0.01],
+    smokeSkew:      [0, 1, 0.01],
+    coreGlow:       [0.2, 1, 0.01],
+    coreGlowSpread: [0.35, 1.4, 0.01],
+    corona:         [0.2, 1, 0.01],
+    gasClouds:      [0, 0.6, 0.01],
+    bulgeAmount:    [0.2, 1.5, 0.01],
+    diskThickness:  [0, 3, 0.05],
+    starFlare:      [0, 1, 0.01],
+    ovalness:       [1.0, 1.3, 0.01],
+    camTilt:        [0.55, 1.4, 0.01],
+    compactness:    [1.3, 2.2, 0.01],
+    starDensity:    [2.2, 4.5, 0.01],
+    twinkleFraction:[0, 0.4, 0.01],
+    blackHoleSize:  [0.02, 0.11, 0.001],
+    centerSpread:   [0.2, 1.1, 0.01]
+  };
+  function hslToRgb(h, s, l) {
+    const a = s * Math.min(l, 1 - l);
+    const f = n => { const k = (n + h * 12) % 12;
+      return l - a * Math.max(-1, Math.min(k - 3, Math.min(9 - k, 1))); };
+    return [f(0), f(8), f(4)];
+  }
+  document.getElementById('random-btn').addEventListener('click', () => {
+    COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
+    KEYS.forEach(k => state[k] = DEFAULTS[k]);
+    for (const [k, [lo, hi, step]] of Object.entries(RANDOM_RANGES)) {
+      const v = lo + Math.random() * (hi - lo);
+      state[k] = Math.round(v / step) * step;
+    }
+    // Palettes: one hue family per roll so the galaxy stays coherent.
+    // Normal mode = pale wash tinted toward the hue; boom = the same hue
+    // saturated. Stars stay white-ish in both.
+    const hue = Math.random();
+    const hue2 = (hue + 0.06 + Math.random() * 0.10) % 1;   // near-neighbour
+    state.normalCenter = hslToRgb(hue,  0.15 + Math.random() * 0.25, 0.88 + Math.random() * 0.08);
+    state.normalArm    = hslToRgb(hue2, 0.25 + Math.random() * 0.30, 0.72 + Math.random() * 0.16);
+    state.normalHaze   = hslToRgb(hue,  0.10 + Math.random() * 0.20, 0.90 + Math.random() * 0.08);
+    state.normalStar   = [1, 1, 1];
+    state.center = hslToRgb(hue,  0.30 + Math.random() * 0.30, 0.40 + Math.random() * 0.20);
+    state.arm    = hslToRgb(hue2, 0.70 + Math.random() * 0.30, 0.50 + Math.random() * 0.15);
+    state.haze   = hslToRgb(hue,  0.55 + Math.random() * 0.35, 0.55 + Math.random() * 0.20);
+    state.star   = [1, 1, 1];
+    updateCoreBtnLook();
+    buildControls(); sync();
+    glslOut.blur();
+    glslOut.value = glslText();
+  });
+
   document.getElementById('copy-btn').addEventListener('click', async () => {
     const status = document.getElementById('copy-status');
     try { await navigator.clipboard.writeText(glslText()); status.textContent = 'Copied'; }
