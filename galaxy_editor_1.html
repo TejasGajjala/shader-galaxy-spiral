@@ -434,17 +434,7 @@ float armWiden(float r) {
 // radius ramp as the dispersion in armAngleMask so both effects grow
 // together.
 float armStarKeep(float r) {
-    // Density profile along the arm. Was flat at 1.0 out to r = 0.4 and then
-    // a smoothstep down -- a dead-flat inner disk, so the arm roots were no
-    // denser than the mid-arm and there was no central concentration at all.
-    // Now a stretched exponential: it starts easing immediately, so the head
-    // is the densest part, then turns over through a knee around r 0.4-0.8
-    // and settles into a thin tail. The r^1.7 power (rather than plain r) is
-    // what keeps the head full instead of sloping away linearly from the
-    // centre. The tail floors at exactly (1 - uArmFalloff), so the slider
-    // keeps its old meaning at both ends: 0 = perfectly uniform and
-    // bit-identical, 1 = arms dissolve completely outward.
-    float keep = 1.0 - uArmFalloff * (1.0 - exp(-2.2 * pow(max(r, 1e-4), 1.7)));
+    float keep = 1.0 - 0.75 * uArmFalloff * smoothstep(0.4, 1.15, r);
     // Rim coarsening (uRimCoarse): thin the OUTERMOST band harder still, so
     // the last stars read as separated points instead of fine grain. Starts
     // past r = 1.0, where uArmFalloff's ramp has already finished, so the
