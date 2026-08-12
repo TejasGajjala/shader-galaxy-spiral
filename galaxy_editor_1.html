@@ -826,7 +826,7 @@ float arm(float n, float aw, float wb, float wn, vec2 p){
 // smoke arm's taper (shoulder 1.25/coeff 3 vs 1.0/coeff 10): the stars
 // are the OUTERMOST structure, running to ~1.55 as scattered dots on
 // plain black after the smoke sheet has already died at ~1.25. Exposed
-// separately because the uArmFalloff dissolution blends the full mask
+// separately because the uArmSpread dissolution blends the full mask
 // toward THIS envelope -- stars scattered anywhere on the annulus, arm
 // pattern gone.
 float armRadialFade(float r) {
@@ -1131,9 +1131,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 aOval = rotate(vec2(aU.x / ovA, aU.y * ovA), ang);
             vec2 aRot = rotate(aU, ang);
             float rAOv = length(aOval);
-            // Arm dissolution (uArmFalloff): blend the cubed mask toward
-            // the bare annulus weight -- outer stars scatter anywhere on
-            // the ring instead of hugging the ridge.
+            // Arm dissolution (uArmSpread via armDissolve): blend the
+            // cubed mask toward the bare annulus weight -- outer stars
+            // scatter anywhere on the ring instead of hugging the ridge.
+            // (uArmFalloff is the separate presence thinning.)
             float aMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, aOval), 3.0),
                               pow(armRadialFade(rAOv), 3.0) * 0.55, armDissolve(rAOv));
             // Skip the lattice wherever the mask/falloff already caps the
@@ -1166,9 +1167,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // round dots. Bulge population shares the same lattice, so max()
         // never double-brightens a shared star.
         float rOv = length(pOval);
-        // Arm dissolution (uArmFalloff): blend the cubed mask toward the
-        // bare annulus weight -- outer stars scatter anywhere on the ring
-        // instead of hugging the ridge ("loosened gravitational pull").
+        // Arm dissolution (uArmSpread via armDissolve): blend the cubed
+        // mask toward the bare annulus weight -- outer stars scatter
+        // anywhere on the ring instead of hugging the ridge ("loosened
+        // gravitational pull"). (uArmFalloff is the presence thinning.)
         float starMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0),
                              pow(armRadialFade(rOv), 3.0) * 0.55, armDissolve(rOv));
         // Gaussian PRESENCE falloff for the bulge/disk population,

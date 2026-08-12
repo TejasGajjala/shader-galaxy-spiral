@@ -498,6 +498,78 @@ transfer (all ALU, no textures):
     order (58 floats — layout shifted: uGlowLayer removed, three arm
     uniforms added, boom palette now 33–44, normal 45–56).
 
+41. **Edge skew rebuilt for real strength.** The width plateau now LEANS
+    with the skew (Wout+Win stays 2W; trough baseMin taken per side), and
+    the exponent pair widened 0.7 -> 0.85 with the blend narrowed to
+    +-0.3 rad -- at +-0.8 the flank never reached its exponent before the
+    arm had already faded. Flank ratio at spread 0.55: 1.77x -> 15.1x.
+42. **uSmokeSkew** -- the star arms' skew for the SMOKE arms (own slider,
+    no width plateau, same 0.85 pair, trough-pinned so gaps hold and the
+    two flanks meet seamlessly mid-gap). Both arm() terms route through
+    smokeProfile(); bit-identical at 0.
+43. **Arm-length relationship REVERSED** (user call): smoke taper
+    shoulder 1.15 -> 1.0 coeff 3 -> 10 (sheet dies ~1.25-1.30, veil black
+    by ~1.45); star taper shoulder 1.15 -> 1.25 coeff 6 -> 3 (bright to
+    ~1.50, speckle ~1.60). The outer ~0.25 r of star arms sits on plain
+    black. Gas already died by ~1.3, unaffected.
+44. **Gas cloud gain halved** (0.55 -> 0.275): full slider now equals the
+    old halfway point. Values/ranges unchanged.
+45. **New hand-tuned defaults** (user-dictated): winding 18.5, falloff
+    0.70, spread 0.61, edgeSkew 1.0, smoke 0.74, smokeSkew 0.5,
+    glowSpread 0.74, gas 0.22, flare 1.0, ovalness 1.05, tilt 1.26,
+    rotSpeed 0.036, compactness 1.88. Ranges widened for hand tuning:
+    coreGlowSpread min 0.4 -> 0.3, starDensity max 4 -> 5.
+46. **Core glow centred**: the tight second gaussian sat at a fixed 0.2
+    offset in the ROTATING frame (V1 relic) -- a bright blob slowly
+    orbiting the hole, obvious once glowSpread tightened. Offset dropped;
+    centroid now time-invariant.
+47. **Two-papers fix**: arm-slab height tapers with plane radius
+    (hEnv = 1 - 0.85*smoothstep(1.0, 1.5, r)) so the two height sheets
+    converge across the naked rim where their footprints separated by
+    ~0.4 r at high tilt. Bit-identical inside r = 1.0. Bulge/floaters
+    keep full height by design.
+48. **uArmWobble** -- static noise warp on the arm phase (no time term,
+    rotating-frame sample: spins rigidly, cannot crawl or re-wind).
+    Radius-ramped amplitude, ~0.7 rad max. Stars and smoke share the
+    field. Default 0, bit-identical, zero-cost gate.
+49. **uRimCoarse** -- outermost star band (past r = 1.0, after falloff's
+    ramp ends): thins the population (0.60 max) AND stretches the
+    envelope outward (armRadialFade shoulder 1.25 -> 1.70, falloff
+    3.0 -> 1.1), so survivors scatter further out instead of stopping at
+    the same edge. First cut only thinned -- at 0.80 removal the
+    1.4-1.6 band came out BELOW baseline and nothing reached further.
+50. **Dive verification pass** (all recent work, shipped defaults and
+    wobble 0.6): glow centroid pinned through the approach, no sheet
+    doubling, naked rim clean under magnification, choreography timeline
+    intact, flares wake in the final stretch, boom-palette fade-back
+    correct. Late-dive star size approved by the user as-is.
+51. **Three rejected experiments, all reverted clean** (verify
+    bit-identity when reverting -- it caught nothing left behind each
+    time): (a) uCoreCluster second lattice at the nucleus -- user: no
+    extra layers; (b) uSmokeCore inner-arm smoke flare -- "doesn't look
+    that great"; (c) armStarKeep dense-head/knee/tail curve
+    (1 - f*(1 - exp(-2.2 r^1.7))) -- "not too great". Lesson: the centre
+    runs at keep = 1 (saturated), so concentration ideas can only THIN
+    the surroundings, which keeps reading as a sparser galaxy, not a
+    richer core. The only true adder is uStarDensity.
+52. **Smoke is NOT saturated across the inner disk** (correction of an
+    in-session claim): its pre-colour term exceeds 1 but feeds the colour
+    pipeline, so rendered crest runs ~83 -> 34/255 across the disk
+    (~2.5x) -- the arms genuinely read as evenly lit gas. Any future
+    "bright arm roots" work starts from that fact.
+53. **Perf state**: rest frame grew ~9 % since item 40's checkpoint
+    (SwiftShader medians 344 -> ~375 ms; real-GPU cost will be smaller).
+    No single feature is responsible -- toggling edge skew, smoke skew,
+    spread, falloff, or gas each changes nothing beyond noise; it is the
+    sum of small always-on additions in the mask functions. The
+    user-perceived "sudden lag" is more likely environmental (battery /
+    thermal / tab DPR), as in the earlier battery incident.
+54. **Sync pass 2** -- deliverables re-spliced verbatim from the editor
+    body; index table regenerated from galaxy.frag declaration order:
+    **61 floats**, uRimCoarse 13, uArmWobble 14, uSmokeSkew 16, boom
+    palette 36-47, normal 48-59, uCenterSpread 60. Three stale comments
+    crediting the dissolution to uArmFalloff corrected to uArmSpread.
+
 ## Dev environment gotchas (added this round)
 
 - A GLSL helper must be DECLARED before first use: moving `armWiden`

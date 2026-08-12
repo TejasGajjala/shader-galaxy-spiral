@@ -57,11 +57,35 @@ uniform float uArmEdgeSkew;     // one-sided arm falloff: hard, sharply
                                 // only -- crest brightness is unchanged
                                 // and nothing clips. STARS ONLY.
                                 // 0 = symmetric arms, bit-identical.
+uniform float uRimCoarse;       // rim coarseness: extra thinning of the
+                                // OUTERMOST star band (past r = 1.0) so
+                                // the last stars sit further apart and
+                                // read as separated points rather than
+                                // fine grain. Presence roll only --
+                                // survivors keep their exact size and
+                                // brightness, nothing is inflated.
+                                // 0 = old rim density, bit-identical.
+uniform float uArmWobble;       // organic imperfection: a static noise
+                                // warp on the arm PHASE, baked into the
+                                // rotating pattern frame, so the windings
+                                // wander instead of tracing a perfect log
+                                // spiral. Applied to stars AND smoke from
+                                // the same field, so they stay registered.
+                                // Grows with radius: tight inner coil,
+                                // wandering outer arms. 0 = perfect
+                                // spiral, bit-identical.
 // --- Nebula haze, split into independently-scaled components (each is
 // amount x hazeMod x its own shape; 0 = that piece hidden). Stars are
 // separate. The old single uHaze == all of these at the same value.
 // (A fourth component, the soft secondary glow layer, was removed.)
 uniform float uArmSmoke;        // smoky filaments tracing the spiral arms
+uniform float uSmokeSkew;       // one-sided falloff for the SMOKE arms:
+                                // the same hard-inner/feathered-outer
+                                // flank trade as uArmEdgeSkew, minus the
+                                // width plateau (smoke keeps its fixed
+                                // width on purpose). Lets gas and stars
+                                // agree on which side is the shock front.
+                                // 0 = symmetric smoke, bit-identical.
 uniform float uCoreGlow;        // broad bright haze at the nucleus
 uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
                                 // center intensity pinned (gaussian width
@@ -254,6 +278,20 @@ float armWiden(float r) {
 // together.
 float armStarKeep(float r) {
     float keep = 1.0 - 0.75 * uArmFalloff * smoothstep(0.4, 1.15, r);
+    // Rim coarsening (uRimCoarse): thin the OUTERMOST band harder still, so
+    // the last stars read as separated points instead of fine grain. Starts
+    // past r = 1.0, where uArmFalloff's ramp has already finished, so the
+    // two do not fight -- falloff shapes the whole outer disk, this shapes
+    // only the naked rim beyond the smoke. Purely a presence roll: the
+    // survivors keep their exact size and brightness (the lattice cell size
+    // CANNOT be varied per pixel -- neighbouring pixels would disagree on
+    // where the stars are and the 3x3 window would tear), so this opens
+    // space between stars without inflating them.
+    // 0.60, not more: the thinning has to leave enough population for the
+    // envelope's outward stretch (armRadialFade) to actually show. At 0.80
+    // the two fought and the 1.4-1.6 band came out FEWER than baseline --
+    // gaps opened but nothing reached further, which is not "spread out".
+    keep *= 1.0 - 0.60 * clamp(uRimCoarse, 0.0, 1.0) * smoothstep(1.0, 1.5, r);
     // Spreading must REDISTRIBUTE stars, not breed them: a plateau of
     // half-width W widens the band from ~0.78 rad to ~(0.78 + W), so thin
     // the population by exactly that ratio. The same stars end up spread
@@ -485,6 +523,21 @@ float spacingWarp(float r) {
     return 1.5 * pow(r / 1.5, uArmSpacing);
 }
 
+// Phase wobble for the arm pattern (uArmWobble): one zero-centred noise
+// tap in the ROTATING pattern frame, so the imperfection is baked into
+// the spiral and spins rigidly with it -- nothing crawls, morphs, or
+// winds tighter over time (the gas-clouds lesson). A phase offset moves
+// an arm radially by offset/(d theta/d r), which is naturally tiny near
+// the centre where the coil is dense; the amplitude ramp on top keeps
+// the inner spiral crisp while the outer windings wander by up to
+// ~0.7 rad of phase at full slider. Position-based (not phase-based),
+// so opposite arms de-symmetrise -- part of the organic look.
+float armWobble(vec2 p, float r) {
+    if (uArmWobble < 0.001) return 0.0;
+    float amp = uArmWobble * 0.7 * (0.25 + 0.75 * smoothstep(0.25, 0.95, r));
+    return amp * noise(p * 1.8 + vec2(5.2, 1.3));
+}
+
 
 // Angular cross-section of the STAR arms: independent WIDTH and EDGE
 // SHARPNESS. (Smoke does not use this -- see the note in arm().)
@@ -510,8 +563,16 @@ float armProfile(float phase, float aw, float r) {
     // Plateau: hold full crest brightness across |d| < W, then run the
     // ORIGINAL falloff from there outward. sin(-PI/2 + x) == -cos(x), so
     // the shifted profile is just (1 + 0.15*cos(|d| - W)) / 1.15.
+    // ...and the plateau leans with the skew. A flat top centred on the
+    // crest is a symmetric pedestal the exponent skew below cannot touch,
+    // so it dilutes the asymmetry badly: at spread 0.55 the flank ratio
+    // fell from 3.3:1 (no plateau) to 1.8:1, which is why max skew read as
+    // weak. Slide the SAME total plateau outward instead -- Wout + Win
+    // stays 2W, so the cross-section is untouched -- and at full skew the
+    // flat top starts right at the crest and runs outward only.
     float W  = w * 1.15;
-    float ad = max(abs(d) - W, 0.0);
+    float Wd = W * (1.0 + sk * (1.0 - 2.0 * step(0.0, d)));
+    float ad = max(abs(d) - Wd, 0.0);
     float base = (1.0 + 0.15*cos(ad)) / 1.15;
 
     // Asymmetric flanks (uArmEdgeSkew) -- the density-wave look: gas piles
@@ -525,9 +586,17 @@ float armProfile(float phase, float aw, float r) {
     // the cross-section while the flanks trade sharpness for feathering.
     float K = aw;
     if (sk >= 0.001) {
-        float a = 1.0 - 0.7 * sk;               // inner half-width factor
-        float b = 1.0 + 0.7 * sk;               // outer half-width factor
-        float side = smoothstep(-0.8, 0.8, d);  // 0 = outer flank, 1 = inner
+        float a = 1.0 - 0.85 * sk;              // inner half-width factor
+        float b = 1.0 + 0.85 * sk;              // outer half-width factor
+        // Blend zone deliberately NARROW. It used to span +-0.8 rad, but at
+        // full skew the inner edge falls off within ~0.15 rad of the crest,
+        // so the flank was still only ~3/4 of the way to its steep exponent
+        // by the time it had already faded -- the sharpening was being spent
+        // out in the tail where nothing is visible. Tightening it costs
+        // nothing (the crest is flat in value and slope regardless of K, so
+        // there is still no seam) and lets each flank reach its real
+        // exponent where it actually shows.
+        float side = smoothstep(-0.3, 0.3, d);  // 0 = outer flank, 1 = inner
         K = mix(aw / (b * b), aw / (a * a), side);
     }
 
@@ -535,51 +604,97 @@ float armProfile(float phase, float aw, float r) {
     // and the skew leave behind: remap this profile's [trough, crest] onto
     // the ORIGINAL arm's [trough, crest] so the gaps between arms stay
     // exactly as dark as they were. baseMin is the true minimum of the
-    // shifted profile (at |d| = PI), so the mapping is exact.
-    float baseMin = (1.0 - 0.15*cos(W)) / 1.15;
+    // shifted profile (at |d| = PI), so the mapping is exact -- per side,
+    // since the two flanks now run different plateaus. The crest stays
+    // seamless regardless: base == 1 there, and f(1) == 1 for any lo.
+    float baseMin = (1.0 - 0.15*cos(Wd)) / 1.15;
     float lo    = pow(baseMin, K);
     float loRef = exp(-0.302283 * aw);
     float f = (pow(base, K) - lo) / (1.0 - lo) * (1.0 - loRef) + loRef;
     return f * P;
 }
 
+// Angular cross-section of the SMOKE arms: armProfile's edge skew without
+// its width plateau -- the smoke keeps its fixed width on purpose (see the
+// NOTE in arm()), but uSmokeSkew sharpens its inner edge and feathers its
+// outer edge by the same area-preserving flank-exponent trade the stars
+// use, so the gas can agree with the stars about which side of the arm is
+// the shock front. Same trough pinning: at |d| = pi both flanks land on
+// the plain profile's floor (pow(base,K) == lo there for either K), so the
+// gaps hold their darkness AND the two flanks meet seamlessly mid-gap.
+// The crest is exact for the same reason as armProfile: base == 1 there
+// and the remap maps 1 to 1 for any flank exponent.
+float smokeProfile(float phase, float aw) {
+    float sk = clamp(uSmokeSkew, 0.0, 1.0);
+    // Skew idle -> the original expression, bit for bit.
+    if (sk < 0.001) return pow(1.0 - 0.15*sin(phase), aw);
+    // Signed angular distance from the crest (phase = -PI/2), [-PI, PI].
+    float d = mod(phase + 1.5707963 + 3.1415927, 6.2831853) - 3.1415927;
+    float base = (1.0 + 0.15*cos(d)) / 1.15;
+    float a = 1.0 - 0.85 * sk;              // inner half-width factor
+    float b = 1.0 + 0.85 * sk;              // outer half-width factor
+    float side = smoothstep(-0.3, 0.3, d);  // 0 = outer flank, 1 = inner
+    float K = mix(aw / (b * b), aw / (a * a), side);
+    float lo    = pow(0.7391304, K);        // trough of base: (1-0.15)/1.15
+    float loRef = exp(-0.302283 * aw);      // same trough at the plain aw
+    float f = (pow(base, K) - lo) / (1.0 - lo) * (1.0 - loRef) + loRef;
+    return f * pow(1.15, aw);
+}
+
 float arm(float n, float aw, float wb, float wn, vec2 p){
     float t = atan(p.y, p.x);
     float r = length(p) + 1e-4;
     float rw = spacingWarp(r);
-    // Mild outer taper from the same r = 1.15 shoulder as the star arms,
-    // so the smoke stops trailing ~0.4 beyond the last visible stars --
-    // the two arm lengths now end near each other (~1.5-1.6), gas just
-    // slightly past the stellar disk. Identity below the shoulder.
-    float ex = max(r - 1.15, 0.0);
-    // NOTE: the smoke arm keeps the plain fixed-width profile on purpose.
+    // Hard outer taper, shoulder well INSIDE the star arms' (1.0 vs 1.25):
+    // the smoke sheet is gone by r ~ 1.25 while the star arms run on to
+    // ~1.55, so the outer star tail sits on plain black with no haze
+    // backdrop. (This deliberately reverses the old near-parity tuning,
+    // where the smoke veil outlived the last stars by ~0.3.) Identity
+    // below the shoulder.
+    float ex = max(r - 1.0, 0.0);
+    // NOTE: the smoke arm keeps the plain fixed-WIDTH profile on purpose.
     // The outward widening lives ONLY on the star arms (armAngleMask ->
     // armProfile) -- spreading the smoke too made the whole nebula fatten,
     // which is not what was wanted: the gas keeps its shape, the stars
-    // come loose from it.
-    return pow(1.0 - 0.15*sin((theta(rw,wb,wn)-t)*n), aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*3.0);
+    // come loose from it. Edge SKEW, though, is available to the smoke as
+    // its own control (smokeProfile / uSmokeSkew).
+    return smokeProfile((theta(rw,wb,wn)-t)*n + armWobble(p, r), aw) * exp(-r*r) * exp(-0.07/r) * exp(-ex*ex*10.0);
 }
 
 // Radial envelope of the STAR arms alone (no angular structure). Outer
-// taper: past r = 1.15 the arms dissolve into the disk instead of
+// taper: past r = 1.25 the arms dissolve into the disk instead of
 // trailing off as long solid ribbons; exactly identity below the
 // shoulder, and since the star mask CUBES this, the tail fragments into
-// sparse dots well before zero. (Start/strength tuned together with the
-// matching mild taper on the smoke arm so both arm systems end near
-// each other around ~1.5.) Exposed separately because the uArmFalloff
-// dissolution blends the full mask toward THIS envelope -- stars
-// scattered anywhere on the annulus, arm pattern gone.
+// sparse dots well before zero. Deliberately gentler and later than the
+// smoke arm's taper (shoulder 1.25/coeff 3 vs 1.0/coeff 10): the stars
+// are the OUTERMOST structure, running to ~1.55 as scattered dots on
+// plain black after the smoke sheet has already died at ~1.25. Exposed
+// separately because the uArmSpread dissolution blends the full mask
+// toward THIS envelope -- stars scattered anywhere on the annulus, arm
+// pattern gone.
 float armRadialFade(float r) {
     float radialFade = exp(-r * 0.65) * exp(-0.07/r);
-    float ex = max(r - 1.15, 0.0);
-    return radialFade * exp(-ex * ex * 6.0);
+    // uRimCoarse carries the rim population FURTHER OUT as well as thinning
+    // it: the outer taper's shoulder slides out and its falloff softens, so
+    // the survivors scatter into a wider, sparser halo instead of stopping
+    // at the same edge. Thinning alone only opened gaps in a band that
+    // still ended where it always did -- which is not what "spread out"
+    // means. Stars only (the smoke keeps its own early taper in arm(), so
+    // this widens the gap between the two on purpose). Full slider reaches
+    // ~r 1.9, well inside the r 2.5+ far-field cut, so nothing clips.
+    // c = 0 restores the exact old taper.
+    float c  = clamp(uRimCoarse, 0.0, 1.0);
+    float ex = max(r - (1.25 + 0.45 * c), 0.0);
+    return radialFade * exp(-ex * ex * mix(3.0, 1.1, c));
 }
 
 float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
     float t = atan(p.y, p.x);
     float r = length(p) + 1e-4;
     float rw = spacingWarp(r);
-    return armProfile((theta(rw,wb,wn)-t)*n, aw, r) * armRadialFade(r);
+    // Same wobble field as the smoke arm (armWobble is position-based),
+    // so the stars keep tracing the same wandering arms as the gas.
+    return armProfile((theta(rw,wb,wn)-t)*n + armWobble(p, r), aw, r) * armRadialFade(r);
 }
 
 // Dissolution weight: how much of the CUBED star mask blends toward the
@@ -610,12 +725,15 @@ vec2 smokeMap(vec2 ps, vec2 pd){
     float a = arm(uArmCount, 6.0, 0.7, uArmWinding, ps);
     float d = fbmdust(pd);
     float armTerm = a*(0.4+0.1*arm(uArmCount+1.0, 4.0, 0.7, uArmWinding, ps*m2))*(0.1+0.6*d+0.4*fbmdisk(pd));
-    vec2 pe = ps; pe.y -= 0.2;
     // uCoreGlowSpread scales the WIDTH of both glow gaussians (dividing
     // the exponent) with their peaks untouched -- reach and intensity are
     // independent controls. At 1.0 the multiplier is exactly 1: identity.
+    // Both gaussians are CENTRED on the nucleus. The tight one used to sit
+    // at a fixed 0.2 offset (a V1 relic) -- in the rotating pattern frame,
+    // so it read as a bright blob slowly orbiting the black hole, obvious
+    // once uCoreGlowSpread tightened the halo around it.
     float gInv = 1.0 / (uCoreGlowSpread * uCoreGlowSpread);
-    float glow = exp(-dot(ps,ps)*1.2*gInv) + 0.5*exp(-dot(pe,pe)*12.0*gInv);
+    float glow = exp(-dot(ps,ps)*1.2*gInv) + 0.5*exp(-dot(ps,ps)*12.0*gInv);
     float glowTerm = glow*(0.7+0.2*d+0.2*fbmabs(pd));
     return vec2(armTerm, glowTerm);
 }
@@ -812,8 +930,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // stretches past the rim; thins at the very center so the core
         // glow stays clean.
         float cEnv = smoothstep(1.35, 0.95, rc) * smoothstep(0.10, 0.40, rc);
+        // 0.275 gain: halved from 0.55 so the full slider range maps to a
+        // subtler layer -- slider 1.0 now gives what 0.5 used to.
         gas = uGasClouds * band * breakup * (0.85 + 0.15 * n2) * cEnv
-            * cloudVis * uHazePulse * 0.55;
+            * cloudVis * uHazePulse * 0.275;
     }
     // Stars. Flat path (uDiskThickness = 0): the original single-plane
     // field, bit for bit, zero extra cost. Thick path: the SAME arm and
@@ -827,7 +947,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (inHole) {
         starsV = 0.0;
     } else if (uDiskThickness > 0.001) {
-        float hDisk  = uDiskThickness * 0.008;  // arm slab half-height
+        // Rim height taper on the ARM slab: sheet footprints separate by
+        // 2*h*parVec, and parVec grows ~1/denom toward the far rim -- at
+        // high tilt the two half-population sheets end up sampled ~0.4 r
+        // apart out there. While smoke covered the rim and the star
+        // annulus died by ~1.4 that read as thickness; with the outer band
+        // now naked scattered stars (armRadialFade to ~1.55), each sheet's
+        // rim became its own legible edge -- "two sheets of paper". Collapse
+        // the slab toward a single plane across exactly that naked band:
+        // full height inside r = 1.0 (bit-identical there), 15% by r = 1.5.
+        // Driven by the PIXEL's plane radius, so both sheets converge
+        // symmetrically and the lo/hi population split is untouched. The
+        // bulge keeps its full height (its gaussian is dead out there), and
+        // the floater strays stay detached by design.
+        float hEnv   = 1.0 - 0.85 * smoothstep(1.0, 1.5, length(pOval));
+        float hDisk  = uDiskThickness * 0.008 * hEnv;  // arm slab half-height
         float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
         starsV = 0.0;
         for (int s = 0; s < 2; s++) {
@@ -840,9 +974,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 aOval = rotate(vec2(aU.x / ovA, aU.y * ovA), ang);
             vec2 aRot = rotate(aU, ang);
             float rAOv = length(aOval);
-            // Arm dissolution (uArmFalloff): blend the cubed mask toward
-            // the bare annulus weight -- outer stars scatter anywhere on
-            // the ring instead of hugging the ridge.
+            // Arm dissolution (uArmSpread via armDissolve): blend the
+            // cubed mask toward the bare annulus weight -- outer stars
+            // scatter anywhere on the ring instead of hugging the ridge.
+            // (uArmFalloff is the separate presence thinning.)
             float aMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, aOval), 3.0),
                               pow(armRadialFade(rAOv), 3.0) * 0.55, armDissolve(rAOv));
             // Skip the lattice wherever the mask/falloff already caps the
@@ -875,9 +1010,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // round dots. Bulge population shares the same lattice, so max()
         // never double-brightens a shared star.
         float rOv = length(pOval);
-        // Arm dissolution (uArmFalloff): blend the cubed mask toward the
-        // bare annulus weight -- outer stars scatter anywhere on the ring
-        // instead of hugging the ridge ("loosened gravitational pull").
+        // Arm dissolution (uArmSpread via armDissolve): blend the cubed
+        // mask toward the bare annulus weight -- outer stars scatter
+        // anywhere on the ring instead of hugging the ridge ("loosened
+        // gravitational pull"). (uArmFalloff is the presence thinning.)
         float starMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0),
                              pow(armRadialFade(rOv), 3.0) * 0.55, armDissolve(rOv));
         // Gaussian PRESENCE falloff for the bulge/disk population,
