@@ -1624,7 +1624,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     diskThickness:  [0, 3, 0.05],
     starFlare:      [0, 1, 0.01],
     ovalness:       [1.0, 1.3, 0.01],
-    camTilt:        [0.55, 1.4, 0.01],
+    // camTilt deliberately NOT rolled: the viewing angle stays put so
+    // rolls change the galaxy, not the camera.
     compactness:    [1.3, 2.2, 0.01],
     starDensity:    [2.2, 4.5, 0.01],
     twinkleFraction:[0, 0.4, 0.01],
