@@ -214,6 +214,14 @@ uniform float uArmEdgeSkew;     // one-sided arm falloff: hard, sharply
                                 // only -- crest brightness is unchanged
                                 // and nothing clips. STARS ONLY.
                                 // 0 = symmetric arms, bit-identical.
+uniform float uRimCoarse;       // rim coarseness: extra thinning of the
+                                // OUTERMOST star band (past r = 1.0) so
+                                // the last stars sit further apart and
+                                // read as separated points rather than
+                                // fine grain. Presence roll only --
+                                // survivors keep their exact size and
+                                // brightness, nothing is inflated.
+                                // 0 = old rim density, bit-identical.
 uniform float uArmWobble;       // organic imperfection: a static noise
                                 // warp on the arm PHASE, baked into the
                                 // rotating pattern frame, so the windings
@@ -427,6 +435,16 @@ float armWiden(float r) {
 // together.
 float armStarKeep(float r) {
     float keep = 1.0 - 0.75 * uArmFalloff * smoothstep(0.4, 1.15, r);
+    // Rim coarsening (uRimCoarse): thin the OUTERMOST band harder still, so
+    // the last stars read as separated points instead of fine grain. Starts
+    // past r = 1.0, where uArmFalloff's ramp has already finished, so the
+    // two do not fight -- falloff shapes the whole outer disk, this shapes
+    // only the naked rim beyond the smoke. Purely a presence roll: the
+    // survivors keep their exact size and brightness (the lattice cell size
+    // CANNOT be varied per pixel -- neighbouring pixels would disagree on
+    // where the stars are and the 3x3 window would tear), so this opens
+    // space between stars without inflating them.
+    keep *= 1.0 - 0.80 * clamp(uRimCoarse, 0.0, 1.0) * smoothstep(1.0, 1.5, r);
     // Spreading must REDISTRIBUTE stars, not breed them: a plateau of
     // half-width W widens the band from ~0.78 rad to ~(0.78 + W), so thin
     // the population by exactly that ratio. The same stars end up spread
@@ -1270,10 +1288,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
-    armCount: 2, armWinding: 18.5, armSpacing: 1.12, armFalloff: 0.70, armSpread: 0.61, armEdgeSkew: 1.0, armWobble: 0.0,
+    armCount: 2, armWinding: 18.5, armSpacing: 1.12, armFalloff: 0.70, armSpread: 0.61, armEdgeSkew: 1.0, rimCoarse: 0.0, armWobble: 0.0,
     armSmoke: 0.74, smokeSkew: 0.5, coreGlow: 1.0, coreGlowSpread: 0.74, corona: 0.80, gasClouds: 0.22, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 1.0, ovalness: 1.05, camTilt: 1.26, rotSpeed: 0.036,
     compactness: 1.88, starDensity: 3.48, maxStarLod: 2.0, twinkleFraction: 0.14, twinkleSpeed: 0.0,
     coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.5, zoomEase: 0.75,
@@ -1282,7 +1300,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
+  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -1296,6 +1314,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'armFalloff',      label: 'Arm star falloff',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armSpread',       label: 'Arm star spread',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armEdgeSkew',     label: 'Arm edge skew',      min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'rimCoarse',       label: 'Rim coarseness',     min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armWobble',       label: 'Arm wobble',         min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'armSmoke',        label: 'Haze: arm smoke',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'smokeSkew',       label: 'Smoke edge skew',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
@@ -1340,7 +1359,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
   const UNIFORM_TO_KEY = {
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing', uArmFalloff: 'armFalloff', uArmSpread: 'armSpread', uArmEdgeSkew: 'armEdgeSkew',
-    uArmWobble: 'armWobble',
+    uRimCoarse: 'rimCoarse', uArmWobble: 'armWobble',
     uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
     uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
     uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
@@ -1470,6 +1489,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uArmFalloff      = ' + state.armFalloff.toFixed(2) + ';',
       'uArmSpread       = ' + state.armSpread.toFixed(2) + ';',
       'uArmEdgeSkew     = ' + state.armEdgeSkew.toFixed(2) + ';',
+      'uRimCoarse       = ' + state.rimCoarse.toFixed(2) + ';',
       'uArmWobble       = ' + state.armWobble.toFixed(2) + ';',
       'uArmSmoke        = ' + state.armSmoke.toFixed(2) + ';',
       'uSmokeSkew       = ' + state.smokeSkew.toFixed(2) + ';',
@@ -1509,6 +1529,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uArmFalloff, state.armFalloff);
     gl.uniform1f(U.uArmSpread, state.armSpread);
     gl.uniform1f(U.uArmEdgeSkew, state.armEdgeSkew);
+    gl.uniform1f(U.uRimCoarse, state.rimCoarse);
     gl.uniform1f(U.uArmWobble, state.armWobble);
     gl.uniform1f(U.uArmSmoke, state.armSmoke);
     gl.uniform1f(U.uSmokeSkew, state.smokeSkew);
