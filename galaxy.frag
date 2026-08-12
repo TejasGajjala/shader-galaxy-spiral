@@ -727,6 +727,27 @@ vec2 smokeMap(vec2 ps, vec2 pd){
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 p = 2.0*fragCoord.xy/iResolution.xy - 1.0;
+    // Aspect correction. The mapping above normalises BOTH axes to [-1,1]
+    // independently, so without this the whole scene stretches to whatever
+    // shape the canvas happens to be: the same uniforms gave a galaxy of
+    // width:height 1.53 in the 9:19.5 phone frame, 1.32 at 1:1 and 2.19 at
+    // 16:9, and on a square canvas it flattened AND overflowed the sides.
+    // (It reads as a camera-tilt problem because a flattened disk is what
+    // a steeper tilt looks like -- but uCamTilt is not what changed.)
+    //
+    // Corrected RELATIVE to the portrait frame everything was authored
+    // against (420 x 868), not to 1:1: at that aspect the factor is
+    // exactly 1.0, so the tuned defaults render bit-identically and only
+    // other canvas shapes are compensated. Scaling the SHORTER-relative
+    // axis (max(f, 1) on each) rather than shrinking one keeps the galaxy
+    // inside the frame instead of letting it overflow.
+    // 392x840 is the CANVAS, not the 420x868 phone frame -- the frame's
+    // 14px border is inside it. This is the surface every default was
+    // judged on, so it is the aspect that must stay untouched.
+    const float REF_ASPECT = 392.0 / 840.0;      // authoring aspect (w/h)
+    float aspect = iResolution.x / max(iResolution.y, 1.0);
+    float f = aspect / REF_ASPECT;               // 1.0 at the phone frame
+    p *= vec2(max(f, 1.0), max(1.0 / f, 1.0));
     p.x = -p.x;
     // Look-at perspective camera: the camera orbits the galaxy center at a
     // uZoom-scaled distance, tilted uCamTilt off top-down, and always AIMS

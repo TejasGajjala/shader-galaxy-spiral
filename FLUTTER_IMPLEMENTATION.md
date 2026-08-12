@@ -78,6 +78,25 @@ reorder declarations there without rebuilding this table.
 
 Total: 61 floats.
 
+### Authoring aspect
+
+Every default above was judged on a **392 × 840 canvas** (portrait, ~9:19.5
+— the editor's phone frame minus its 14 px border). The shader corrects for
+aspect internally, relative to exactly that ratio, so:
+
+- at 392:840 the correction is exactly 1.0 and the render is bit-identical
+  to the editor;
+- at any other shape the galaxy **keeps its proportions** and stays inside
+  the frame (extra empty space appears on the relatively longer axis)
+  rather than stretching to fill.
+
+Before that correction existed the scene stretched to whatever shape the
+canvas was — the same uniforms gave a galaxy of width:height 1.53 at
+9:19.5, 1.32 at 1:1 and 2.19 at 16:9, and on a square canvas it flattened
+*and* overflowed both edges. That symptom reads as a camera-tilt problem
+because a flattened disk is also what a steeper tilt looks like, so do not
+"fix" it by touching `uCamTilt` — check `iResolution` first.
+
 ## 3. Painting
 
 ```dart
@@ -117,6 +136,13 @@ what makes the dive feel correct:
   spin-up from 5× to ~20× as the camera nears the core. Without it the
   late dive looks frozen. During the pulse/hold/fade phases it drops back
   to 1×.
+
+> **`iTime` is NOT wall-clock seconds.** Feeding it seconds-since-mount
+> looks correct at rest — the two are identical there — and then silently
+> breaks the moment a dive runs: the galaxy keeps spinning at 1× while the
+> camera accelerates into it, and the late dive reads as frozen. Accumulate
+> it as `shaderTime += dt * rotationRate` per frame instead of sampling an
+> absolute clock. This has already caught one integration.
 
 ## 5. Dive choreography
 

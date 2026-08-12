@@ -1556,7 +1556,33 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uNormalArmColor    = ' + fmtVec(state.normalArm) + ';',
       'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
       'uNormalStarColor   = ' + fmtVec(state.normalStar) + ';',
-      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';'
+      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';',
+      // Host-driven uniforms. These are NOT sliders -- the app animates
+      // them -- so they never appeared in this block, which meant anyone
+      // pasting it into another renderer had to GUESS seven inputs and
+      // guessed differently. Emitted as comments with their rest-state
+      // values: applyGlslText ignores them (they are not in
+      // UNIFORM_TO_KEY), so pasting the block back in is unaffected.
+      '',
+      '// --- host-driven, not sliders. Rest-state values shown. ---',
+      '// iResolution      = canvas size in PHYSICAL pixels (size * dpr)',
+      '// iTime            = rotation clock, NOT wall time (see below)',
+      '// uZoom            = 1.0;   // 1 = rest, ->0 = dived',
+      '// uFade            = 1.0;   // 1 = visible, 0 = black (dive fade only)',
+      '// uColorTransition = ' + (colorTransition > 0.5 ? '1.0' : '0.0') +
+        ';   // 0 = normal palette, 1 = boom. THIS BLOCK WAS COPIED IN ' +
+        (colorTransition > 0.5 ? 'BOOM' : 'NORMAL') + ' MODE',
+      '// uHazePulse       = 1.0;   // "come alive" beat, 1 = neutral',
+      // zoom is 1.0 at rest by definition -- do NOT read currentZoom here,
+      // it is declared after the first sync() call and would be in its
+      // temporal dead zone.
+      '// uPxSize          = ' + (3.3 * Math.max(1 / canvas.width,
+        1 / (canvas.height * Math.cos(state.camTilt)))).toFixed(5) +
+        ';  // 3.3*zoom*max(1/w, 1/(h*cos(tilt))) -- WORST axis, recompute on resize',
+      '//',
+      '// Authored against a ' + canvas.width + 'x' + canvas.height +
+        ' canvas (portrait ~9:19.5). The shader self-corrects for other',
+      '// aspects, so shape holds, but framing was judged at that ratio.'
     ].join('\n');
   }
 

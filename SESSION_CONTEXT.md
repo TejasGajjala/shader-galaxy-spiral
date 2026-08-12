@@ -570,6 +570,44 @@ transfer (all ALU, no textures):
     palette 36-47, normal 48-59, uCenterSpread 60. Three stale comments
     crediting the dissolution to uArmFalloff corrected to uArmSpread.
 
+55. **Aspect correction added.** `p = 2*fragCoord/iResolution - 1`
+    normalised BOTH axes independently, so the scene stretched to whatever
+    shape the canvas was: same uniforms gave galaxy w:h 1.53 at 9:19.5,
+    1.32 at 1:1, 2.19 at 16:9, and a square canvas flattened it AND
+    overflowed both edges. Corrected RELATIVE to the authoring canvas
+    (392x840 -- the phone frame MINUS its 14px border; using 420x868 was
+    wrong and broke identity) via `p *= vec2(max(f,1), max(1/f,1))`,
+    f = aspect/REF. Identity at 392:840 (verified bit-identical);
+    "contain" semantics elsewhere so nothing overflows. Reads as a
+    camera-tilt bug because a flattened disk is what steeper tilt looks
+    like -- check iResolution first, never uCamTilt.
+56. **Copy block now emits the SEVEN host-driven uniforms as comments**
+    (iResolution, iTime, uZoom, uFade, uColorTransition, uHazePulse,
+    uPxSize) with rest-state values, plus the authoring canvas size. They
+    were never in the block (not sliders), so anyone pasting it into
+    another renderer had to guess all seven -- the root cause of a whole
+    list of integration mismatches reported from another webview.
+    uColorTransition is emitted with the CURRENT mode called out, since a
+    normal/boom mismatch is the single biggest visual difference.
+    applyGlslText ignores comment lines, so paste-back round-trips (36
+    values, block byte-stable).
+    NOTE: glslText() runs during the FIRST sync(), which happens before
+    `let currentZoom` is initialised -- reading it there throws a TDZ
+    ReferenceError and leaves the textarea empty. The block documents the
+    REST state, so use the literal 1.0 (and state.camTilt) instead.
+57. **Integration mismatches reported from another webview**, triaged:
+    real and ours = none beyond the two above; real and theirs = uPxSize
+    derived from the wrong axis (our doc SS7 already had the worst-axis
+    formula), iTime fed as wall-clock seconds (fine at rest, breaks the
+    dive); deliberate app choices = uFade x vitality 1.1/0.45, fragCoord
+    offset putting the core at 36% height, bottom vignette 0.9, scroll
+    fade to 10%; non-issues = uZoom/uFlare at 1 (flares only wake below
+    uZoom 0.22), DPR cap 2, antialias:false.
+58. **Doc**: added an "Authoring aspect" section under the index table and
+    a blockquote warning that iTime is NOT wall-clock (accumulate
+    `shaderTime += dt * rotationRate`; sampling an absolute clock looks
+    right at rest and freezes the late dive).
+
 ## Dev environment gotchas (added this round)
 
 - A GLSL helper must be DECLARED before first use: moving `armWiden`
@@ -582,3 +620,7 @@ transfer (all ALU, no textures):
 - The artifact publish endpoint has been refusing UPDATES to existing
   artifacts (403 on its verification read); publishing to a fresh file
   path mints a new URL and works.
+- The artifact endpoint also returns "another session published a newer
+  version" conflicts on a URL only this session has ever published to.
+  Publishing to a fresh file path is the non-destructive resolution --
+  do NOT force, which would discard whatever is actually there.
