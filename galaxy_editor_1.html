@@ -444,7 +444,11 @@ float armStarKeep(float r) {
     // CANNOT be varied per pixel -- neighbouring pixels would disagree on
     // where the stars are and the 3x3 window would tear), so this opens
     // space between stars without inflating them.
-    keep *= 1.0 - 0.80 * clamp(uRimCoarse, 0.0, 1.0) * smoothstep(1.0, 1.5, r);
+    // 0.60, not more: the thinning has to leave enough population for the
+    // envelope's outward stretch (armRadialFade) to actually show. At 0.80
+    // the two fought and the 1.4-1.6 band came out FEWER than baseline --
+    // gaps opened but nothing reached further, which is not "spread out".
+    keep *= 1.0 - 0.60 * clamp(uRimCoarse, 0.0, 1.0) * smoothstep(1.0, 1.5, r);
     // Spreading must REDISTRIBUTE stars, not breed them: a plateau of
     // half-width W widens the band from ~0.78 rad to ~(0.78 + W), so thin
     // the population by exactly that ratio. The same stars end up spread
@@ -827,8 +831,18 @@ float arm(float n, float aw, float wb, float wn, vec2 p){
 // pattern gone.
 float armRadialFade(float r) {
     float radialFade = exp(-r * 0.65) * exp(-0.07/r);
-    float ex = max(r - 1.25, 0.0);
-    return radialFade * exp(-ex * ex * 3.0);
+    // uRimCoarse carries the rim population FURTHER OUT as well as thinning
+    // it: the outer taper's shoulder slides out and its falloff softens, so
+    // the survivors scatter into a wider, sparser halo instead of stopping
+    // at the same edge. Thinning alone only opened gaps in a band that
+    // still ended where it always did -- which is not what "spread out"
+    // means. Stars only (the smoke keeps its own early taper in arm(), so
+    // this widens the gap between the two on purpose). Full slider reaches
+    // ~r 1.9, well inside the r 2.5+ far-field cut, so nothing clips.
+    // c = 0 restores the exact old taper.
+    float c  = clamp(uRimCoarse, 0.0, 1.0);
+    float ex = max(r - (1.25 + 0.45 * c), 0.0);
+    return radialFade * exp(-ex * ex * mix(3.0, 1.1, c));
 }
 
 float armAngleMask(float n, float aw, float wb, float wn, vec2 p){
