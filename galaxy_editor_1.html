@@ -1139,7 +1139,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // symmetrically and the lo/hi population split is untouched. The
         // bulge keeps its full height (its gaussian is dead out there), and
         // the floater strays stay detached by design.
-        float hEnv   = 1.0 - 0.85 * smoothstep(1.0, 1.5, length(pOval));
+        float hEnv   = 1.0 - 0.50 * smoothstep(1.0, 1.5, length(pOval));
         float hDisk  = uDiskThickness * 0.008 * hEnv;  // arm slab half-height
         float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
         starsV = 0.0;
