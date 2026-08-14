@@ -625,21 +625,57 @@ transfer (all ALU, no textures):
   Publishing to a fresh file path is the non-destructive resolution --
   do NOT force, which would discard whatever is actually there.
 
-## Item 59: Disk thickness envelope adjustment (session 02f2cb90)
+## Item 59: Disk thickness rendered as separated plates (the real cause)
 
-**Issue:** After increasing `armFalloff` from 0.70 to 1.00 in commit 34dd529,
-the disk thickness looked "too separated" again — visible two-sheet structure
-at the rim despite the hEnv tapering fix.
+**Reported:** at `uDiskThickness = 4.20` with bulge stars at 0, each arm
+rendered as two distinct copies -- "there is a layer where the stars are not
+getting dispersed at all, they're stuck to the layer." Suspicion was on the
+newly-added `uArmEdgeSkew` / `uRimCoarse`.
 
-**Root cause:** The hEnv envelope was designed with armFalloff = 0.70. With the
-higher falloff value, the outer rim became much sparser (fewer stars to hide
-the discontinuity), and the aggressive envelope coefficient (0.85) was
-collapsing the sheets too much.
+**Not those.** Both are angular/density masks; neither can open a vertical
+gap. The thick path has two independent height mechanisms and only one of
+them scaled with the slider:
 
-**Solution:** Reduced hEnv coefficient from 0.85 to 0.50 for gentler tapering:
-- Old: `hEnv = 1.0 - 0.85 * smoothstep(1.0, 1.5, r)` → rim at r=1.5 becomes 0.15x height
-- New: `hEnv = 1.0 - 0.50 * smoothstep(1.0, 1.5, r)` → rim at r=1.5 becomes 0.50x height
+| mechanism | magnitude | scales with slider? |
+|---|---|---|
+| sheet offset (macro) | `hDisk = T * 0.008` | yes, linear, uncapped |
+| per-star sub-cell fuzz (micro) | `hh * min(T, 1.0) * 0.004` | **saturates at T = 1** |
 
-The 0.50 coefficient preserves disk thickness without requiring a completely
-solid rim to hide the sheet separation. Works with both old and new armFalloff
-values. Commit 3521e0f. Synced across all three shader files.
+The population is split across sheets at exactly `+hDisk` / `-hDisk`, and the
+fuzz is the only thing that fills between them. So:
+
+- T = 1.0 -> sheets +/-0.008, fuzz +/-0.004: gap 0.008, sheets 0.008 thick. Reads fuzzy.
+- T = 4.2 -> sheets +/-0.0336, fuzz still +/-0.004: **gap 0.059, sheets 0.008 thick** --
+  the vacuum is ~7x the sheets themselves. Two plates.
+
+Visible on arms and not the bulge because arms are thin ridges (doubling is
+legible) while the bulge is a diffuse gaussian blob (doubling is not) -- which
+is exactly what was observed.
+
+The fuzz cannot be widened to cover it: `starFieldLevel` offsets each star
+from its own footprint, so the 3x3 lookup caps the shift sub-cell. That cap is
+*why* it saturates.
+
+**Fix:** scale the sheet COUNT instead of trying to widen the fuzz. Sheets
+spread evenly across [-h, +h] with the partition hash window tiling [0,1) N
+ways, so the star count is conserved -- thickening redistributes the same
+stars through the slab rather than breeding them. `N = clamp(floor(1 + T), 2, 6)`
+holds sheet spacing near its T = 1 value at any thickness. T <= 1.35 (the
+default) still resolves to exactly 2 sheets, so the default look is
+bit-identical and costs nothing; only a cranked slider pays for extra sheets.
+
+`uDiskThickness` is a uniform, so N is the same for every pixel and the loop
+stays fully coherent. Constant bound + `break` rather than a dynamic bound:
+the editor is WebGL1 (GLSL ES 1.00), which forbids non-constant loop bounds.
+
+**Reverted in the same commit:** the earlier `hEnv` 0.85 -> 0.50 change from
+this session. That was a misdiagnosis -- it *widened* the rim gap (keeping
+more sheet height exactly where the sheets were already separating), so it
+made the reported symptom worse. Back to 0.85, whose rim-collapse job is real
+and complementary to the N-sheet fill.
+
+**Caveat:** committed WITHOUT a render check (session was low on credits, user
+verifying manually). Statically reviewed for ES 1.00 legality and confirmed no
+dangling `sgn` reference, but per the gotcha below a stale program still
+renders -- if the canvas looks unchanged, check the console for a compile error
+before assuming the math is wrong.

@@ -345,8 +345,10 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
             if (uDiskThickness > 0.001) {
                 float hh = (hash1(n + vec2(17.9, 61.3)) - 0.5) * 2.0;
                 // Fuzz saturates at thickness 1: this fine lattice has no
-                // sub-cell budget past that, so slider range above 1 goes
-                // entirely into the floaters (which do have headroom).
+                // sub-cell budget past that. Slider range above 1 is
+                // carried by the floaters (which have headroom) and by the
+                // arm/bulge SHEET COUNT, which grows so the widening slab
+                // keeps its sheet spacing near this fuzz's reach.
                 hOff = parVec * (hh * min(uDiskThickness, 1.0) * 0.004);
                 hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
             }
@@ -945,8 +947,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     }
     // Stars. Flat path (uDiskThickness = 0): the original single-plane
     // field, bit for bit, zero extra cost. Thick path: the SAME arm and
-    // bulge populations are dealt out across two exactly-shifted height
-    // sheets each (partition hash -- no density change), with the arm
+    // bulge populations are dealt out across N exactly-shifted height
+    // sheets each -- N grows with the slider, see below (partition hash --
+    // no density change) -- with the arm
     // mask and disk falloff evaluated at every sheet's own FOOTPRINT so
     // stars keep tracing the arms they belong to. Arms stay a thin slab;
     // the bulge gets ~3x the height (it's the puffy spheroid); the sparse
@@ -958,7 +961,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // Rim height taper on the ARM slab: sheet footprints separate by
         // 2*h*parVec, and parVec grows ~1/denom toward the far rim -- at
         // high tilt the two half-population sheets end up sampled ~0.4 r
-        // apart out there. While smoke covered the rim and the star
+        // apart out there (the outermost pair separates the most).
+        // While smoke covered the rim and the star
         // annulus died by ~1.4 that read as thickness; with the outer band
         // now naked scattered stars (armRadialFade to ~1.55), each sheet's
         // rim became its own legible edge -- "two sheets of paper". Collapse
@@ -968,17 +972,41 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // symmetrically and the lo/hi population split is untouched. The
         // bulge keeps its full height (its gaussian is dead out there), and
         // the floater strays stay detached by design.
-        float hEnv   = 1.0 - 0.50 * smoothstep(1.0, 1.5, length(pOval));
+        float hEnv   = 1.0 - 0.85 * smoothstep(1.0, 1.5, length(pOval));
         float hDisk  = uDiskThickness * 0.008 * hEnv;  // arm slab half-height
         float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
+        // Sheet COUNT scales with the slider, so the slab stays FILLED.
+        // Adjacent sheets sit 2h/(N-1) apart, and the only thing blurring
+        // that quantization is the per-star sub-cell fuzz in
+        // starFieldLevel -- which saturates at thickness 1 (no sub-cell
+        // budget past that). With N pinned at 2 the spacing kept growing
+        // while the fuzz did not: by thickness 4.2 the two sheets sat ~7x
+        // their own thickness apart, so every arm ridge rendered as two
+        // solid plates with vacuum between them -- worst on the arms,
+        // which are thin ridges, and near-invisible on the bulge, which is
+        // a diffuse blob. N = 1 + thickness holds the spacing near its
+        // thickness-1 value instead. uDiskThickness is a uniform, so N is
+        // identical for every pixel and the break below stays fully
+        // coherent; thickness <= 1.35 (the default) still resolves to
+        // exactly 2 sheets -- bit-identical, and free. Constant bound +
+        // break because the editor targets GLSL ES 1.00 (WebGL1), which
+        // forbids a non-constant loop bound; 6 caps the unrolled size.
+        int   nSheet = int(clamp(floor(1.0 + uDiskThickness), 2.0, 6.0));
+        float invN   = 1.0 / float(nSheet);
         starsV = 0.0;
-        for (int s = 0; s < 2; s++) {
-            float sgn = (s == 0) ? 1.0 : -1.0;
-            float lo  = (s == 0) ? 0.0 : 0.5;
-            float hi  = lo + 0.5;
+        for (int s = 0; s < 6; s++) {
+            if (s >= nSheet) break;
+            // Heights span [-h, +h] endpoint-inclusive, s = 0 being +h, so
+            // N = 2 reproduces the old +/- pair exactly. The partition
+            // window tiles [0,1) N ways on the SAME hash, so the field is
+            // repartitioned, never duplicated -- thickening spreads the
+            // same stars through the slab instead of breeding them.
+            float t   = 1.0 - 2.0 * float(s) / float(nSheet - 1);
+            float lo  = float(s) * invN;
+            float hi  = lo + invN;
             // Arm sheet: footprint built in the unrotated frame (pBg) so
             // the oval warp stays screen-aligned, then rotated like p.
-            vec2 aU = pBg - parVec * (sgn * hDisk);
+            vec2 aU = pBg - parVec * (t * hDisk);
             vec2 aOval = rotate(vec2(aU.x / ovA, aU.y * ovA), ang);
             vec2 aRot = rotate(aU, ang);
             float rAOv = length(aOval);
@@ -1001,7 +1029,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             // footprint -- near-flat over the core, collapsing hard with
             // radius so the diffuse scatter stays concentrated instead of
             // trailing far outside the disk; 0.8x keeps arms dominant.
-            vec2 bRot = rotate(pBg - parVec * (sgn * hBulge), ang);
+            vec2 bRot = rotate(pBg - parVec * (t * hBulge), ang);
             float bKeep = min(uBulge * 2.4 * exp(-dot(bRot, bRot) * 7.0), 1.0);
             if (bKeep > 0.003) {
                 starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0, 1.0).y * 1.5 * 0.8);
