@@ -624,3 +624,22 @@ transfer (all ALU, no textures):
   version" conflicts on a URL only this session has ever published to.
   Publishing to a fresh file path is the non-destructive resolution --
   do NOT force, which would discard whatever is actually there.
+
+## Item 59: Disk thickness envelope adjustment (session 02f2cb90)
+
+**Issue:** After increasing `armFalloff` from 0.70 to 1.00 in commit 34dd529,
+the disk thickness looked "too separated" again — visible two-sheet structure
+at the rim despite the hEnv tapering fix.
+
+**Root cause:** The hEnv envelope was designed with armFalloff = 0.70. With the
+higher falloff value, the outer rim became much sparser (fewer stars to hide
+the discontinuity), and the aggressive envelope coefficient (0.85) was
+collapsing the sheets too much.
+
+**Solution:** Reduced hEnv coefficient from 0.85 to 0.50 for gentler tapering:
+- Old: `hEnv = 1.0 - 0.85 * smoothstep(1.0, 1.5, r)` → rim at r=1.5 becomes 0.15x height
+- New: `hEnv = 1.0 - 0.50 * smoothstep(1.0, 1.5, r)` → rim at r=1.5 becomes 0.50x height
+
+The 0.50 coefficient preserves disk thickness without requiring a completely
+solid rim to hide the sheet separation. Works with both old and new armFalloff
+values. Commit 3521e0f. Synced across all three shader files.
