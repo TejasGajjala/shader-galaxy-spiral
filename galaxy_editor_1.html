@@ -1844,6 +1844,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // calls recStep() after each draw.
   const REC_FPS = 24, REC_STEP = 1000 / REC_FPS;
   let recClock = 0, recStart = 0, recTrack = null, recStep = null;
+  // Manual frame control (captureStream(0) + track.requestFrame) is what
+  // lets a capture run on the virtual clock. Safari ships captureStream
+  // and MediaRecorder but NOT requestFrame, so there the track samples on
+  // its own wall-clock schedule and the dive has to run in real time --
+  // a slow frame is duplicated rather than waited for. recManual says
+  // which regime is live; the virtual clock applies only to the first.
+  let recManual = false;
 
   function resize() {
     if (recording) return;
@@ -1943,7 +1950,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       a.stream.getTracks().forEach(t => t.stop());
       canvas.width = a.oldW; canvas.height = a.oldH;
       gl.viewport(0, 0, a.oldW, a.oldH);
-      recording = false; recStep = null; recTrack = null;
+      recording = false; recStep = null; recTrack = null; recManual = false;
       active = null;
       recBtn.disabled = false;
       recStatus.classList.remove('on');
@@ -1971,9 +1978,23 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       try {
         canvas.width = w; canvas.height = h;
         gl.viewport(0, 0, w, h);
-        stream = canvas.captureStream(0);   // manual: frames only on request
-        const track = stream.getVideoTracks()[0];
-        if (!track || typeof track.requestFrame !== 'function') throw new Error('no manual frame control');
+        // Prefer manual mode; fall back to automatic sampling on browsers
+        // (Safari) that have no requestFrame. Automatic still records --
+        // it just cannot outrun the GPU, so it is real time and may
+        // duplicate frames at high resolution.
+        let track = null;
+        try {
+          stream = canvas.captureStream(0);
+          track = stream.getVideoTracks()[0];
+          if (!track || typeof track.requestFrame !== 'function') throw new Error('no requestFrame');
+          recManual = true;
+        } catch (e) {
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          stream = canvas.captureStream(REC_FPS);
+          track = stream.getVideoTracks()[0];
+          if (!track) throw new Error('canvas capture unavailable');
+          recManual = false;
+        }
         // avc1 first where hardware-backed; then vp8, which encodes a lot
         // faster than vp9 and is plenty for stars on black.
         const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp8',
@@ -2003,32 +2024,44 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         };
 
         active = { rec, stream, oldW, oldH, cancelled: false };
-        recTrack = track;
+        recTrack = recManual ? track : null;
         recording = true;
         recClock = recStart = Date.now();
         const wall0 = Date.now();
         let n = 0, dived = false;
 
-        // Called from frame() right after each draw. One drawn frame = one
-        // captured frame = one fixed clock step, so the clip is smooth at
-        // REC_FPS regardless of how long the draw took.
-        recStep = () => {
-          if (recTrack) recTrack.requestFrame();
-          recClock += REC_STEP;
-          n++;
-          const el = recClock - recStart;
-          const secs = (Date.now() - wall0) / 1000;
-          const eta = n > 4 ? Math.round(secs / n * (FRAMES - n)) : null;
-          recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
-          recText.textContent = 'Rendering ' + Math.min(n, FRAMES) + '/' + FRAMES + ' frames'
-            + (eta !== null ? '  ~' + eta + 's left' : '');
-          if (!dived && el >= LEAD) { dived = true; startTransition(true); }
-          if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
-        };
+        // Called from frame() right after each draw.
+        recStep = recManual
+          // Manual: one drawn frame = one captured frame = one fixed clock
+          // step, so the clip is smooth at REC_FPS however long the draw
+          // took. Progress is frames done, and the ETA is real seconds.
+          ? () => {
+              if (recTrack) recTrack.requestFrame();
+              recClock += REC_STEP;
+              n++;
+              const el = recClock - recStart;
+              const secs = (Date.now() - wall0) / 1000;
+              const eta = n > 4 ? Math.round(secs / n * (FRAMES - n)) : null;
+              recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
+              recText.textContent = 'Rendering ' + Math.min(n, FRAMES) + '/' + FRAMES + ' frames'
+                + (eta !== null ? '  ~' + eta + 's left' : '');
+              if (!dived && el >= LEAD) { dived = true; startTransition(true); }
+              if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
+            }
+          // Automatic: the track samples itself, so the dive must play at
+          // real speed and the clip is done when the wall clock says so.
+          // Progress is elapsed time; there is nothing to wait for.
+          : () => {
+              const el = Date.now() - wall0;
+              recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
+              recText.textContent = 'Recording live  ' + (Math.max(0, TOTAL - el) / 1000).toFixed(1) + 's left';
+              if (!dived && el >= LEAD) { dived = true; startTransition(true); }
+              if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
+            };
 
         recBtn.disabled = true;
         recFill.style.width = '0%';
-        recText.textContent = 'Rendering 0/' + FRAMES + ' frames';
+        recText.textContent = recManual ? 'Rendering 0/' + FRAMES + ' frames' : 'Recording live';
         recStatus.classList.add('on');
         rec.start();
       } catch (err) {
@@ -2112,7 +2145,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (isZooming) return;
     transitionTarget = toBoom ? 1.0 : 0.0;
     isZooming = true;
-    zoomStartTime = (recording && recStep) ? recClock : Date.now();
+    zoomStartTime = (recording && recManual && recStep) ? recClock : Date.now();
     boomBtn.disabled = true;
     boomBtn.style.opacity = '0';
     boomBtn.style.pointerEvents = 'none';
@@ -2166,8 +2199,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     }
     // recStep is what advances recClock, so fall back to wall time if it
     // is ever missing -- otherwise `now` would freeze and so would the
-    // whole render loop, with no way for the user to recover.
-    const now = (recording && recStep) ? recClock : Date.now();
+    // whole render loop, with no way for the user to recover. Real-time
+    // captures stay on wall time throughout.
+    const now = (recording && recManual && recStep) ? recClock : Date.now();
     const delta = (now - lastFrame) / 1000.0;
     lastFrame = now;
     twinkleTime += delta; // always real-time, regardless of dive/rotation
