@@ -70,13 +70,28 @@
   #rec-btn:hover { background: rgba(217, 70, 239, 0.55); color: #fff; }
   #rec-btn[disabled] { cursor: default; background: rgba(217, 70, 239, 0.75); color: #fff; }
   #rec-btn svg { width: 18px; height: 18px; }
-  /* Live countdown while capturing, so the run is visibly bounded. */
+  /* Capture progress. A capture renders far slower than real time, so the
+     canvas necessarily looks frozen while it runs -- without a bar, a
+     frame count and a way out, that is indistinguishable from a hang. */
   #rec-status {
-    position: absolute; top: 20px; right: 104px; z-index: 5;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
-    color: #f0abfc; display: none; font-variant-numeric: tabular-nums;
+    position: absolute; top: 14px; left: 14px; right: 104px; z-index: 6;
+    display: none; flex-direction: column; gap: 6px;
+    background: rgba(12, 14, 28, 0.88); border-radius: 8px; padding: 8px 10px;
   }
-  #rec-status.on { display: block; }
+  #rec-status.on { display: flex; }
+  #rec-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.15); overflow: hidden; }
+  #rec-bar > i { display: block; height: 100%; width: 0%; background: #d946ef; }
+  #rec-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #rec-text {
+    font-size: 10px; color: rgba(255,255,255,0.85);
+    font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+  }
+  #rec-cancel {
+    border: none; border-radius: 5px; padding: 3px 9px; cursor: pointer;
+    font-size: 10px; font-weight: 600;
+    background: rgba(255,255,255,0.16); color: rgba(255,255,255,0.9);
+  }
+  #rec-cancel:hover { background: rgba(255,255,255,0.26); }
   #rec-size {
     position: absolute; top: 58px; right: 14px; z-index: 5;
     background: rgba(20, 22, 40, 0.75); color: rgba(255,255,255,0.85);
@@ -168,9 +183,13 @@
   <button id="rec-btn" title="Record the dive at full HD">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="10"/></svg>
   </button>
-  <span id="rec-status"></span>
+  <div id="rec-status">
+    <div id="rec-bar"><i></i></div>
+    <div id="rec-row"><span id="rec-text">Starting</span><button id="rec-cancel">Cancel</button></div>
+  </div>
   <select id="rec-size" title="Recording resolution">
-    <option value="1080x2314">1080 &times; 2314</option>
+    <option value="720x1544">720 &times; 1544 &mdash; fast</option>
+    <option value="1080x2314" selected>1080 &times; 2314</option>
     <option value="1440x3086">1440 &times; 3086</option>
     <option value="1920x1080">1920 &times; 1080</option>
   </select>
@@ -1823,7 +1842,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // clip takes longer than 10 s to produce -- which is the right trade.
   // frame() reads recClock in place of Date.now() while this is set, and
   // calls recStep() after each draw.
-  const REC_FPS = 30, REC_STEP = 1000 / REC_FPS;
+  const REC_FPS = 24, REC_STEP = 1000 / REC_FPS;
   let recClock = 0, recStart = 0, recTrack = null, recStep = null;
 
   function resize() {
@@ -1894,6 +1913,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   (() => {
     const recBtn = document.getElementById('rec-btn');
     const recStatus = document.getElementById('rec-status');
+    const recFill = document.querySelector('#rec-bar > i');
+    const recText = document.getElementById('rec-text');
+    const recCancel = document.getElementById('rec-cancel');
     const recSize = document.getElementById('rec-size');
     const overlay = document.getElementById('rec-overlay');
     const video = overlay.querySelector('video');
@@ -1910,77 +1932,116 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // These are CLIP milliseconds, measured on the virtual clock.
     const LEAD = 1000, DIVE = 8200, TAIL = 800;
     const TOTAL = LEAD + DIVE + TAIL;
+    const FRAMES = Math.round(TOTAL / REC_STEP);
+
+    let active = null;   // { rec, stream, oldW, oldH, cancelled }
+
+    function finish() {
+      const a = active;
+      if (!a) return;
+      if (a.rec && a.rec.state !== 'inactive') { a.rec.stop(); return; }  // onstop re-enters
+      a.stream.getTracks().forEach(t => t.stop());
+      canvas.width = a.oldW; canvas.height = a.oldH;
+      gl.viewport(0, 0, a.oldW, a.oldH);
+      recording = false; recStep = null; recTrack = null;
+      active = null;
+      recBtn.disabled = false;
+      recStatus.classList.remove('on');
+    }
+    recCancel.addEventListener('click', () => { if (active) { active.cancelled = true; finish(); } });
 
     recBtn.addEventListener('click', () => {
       if (recording) return;
       if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) {
-        recStatus.textContent = 'unsupported';
         recStatus.classList.add('on');
-        setTimeout(() => recStatus.classList.remove('on'), 2500);
+        recText.textContent = 'Recording unsupported in this browser';
+        setTimeout(() => recStatus.classList.remove('on'), 3000);
         return;
       }
-      // The dive runs normal -> boom, so start from rest in normal.
-      btnNormal.click();
+      btnNormal.click();   // the dive runs normal -> boom, so start at rest
 
       const [w, h] = recSize.value.split('x').map(Number);
       const oldW = canvas.width, oldH = canvas.height;
-      recording = true;
-      recClock = recStart = Date.now();
-      canvas.width = w; canvas.height = h;
-      gl.viewport(0, 0, w, h);
+      let stream = null;
 
-      // captureStream(0) is MANUAL mode: the track emits a frame only when
-      // requestFrame() asks, never on its own schedule. That is what lets
-      // the clip run on the virtual clock instead of the wall clock -- and
-      // it means a slow frame delays the capture rather than dropping it.
-      const stream = canvas.captureStream(0);
-      recTrack = stream.getVideoTracks()[0];
-      const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9',
-                    'video/webm;codecs=vp8', 'video/webm']
-                   .find(t => MediaRecorder.isTypeSupported(t)) || '';
-      const rec = new MediaRecorder(stream,
-        mime ? { mimeType: mime, videoBitsPerSecond: 24000000 } : undefined);
-      const chunks = [];
-      let dived = false;
+      // Build the pipeline BEFORE committing any state: if any of this
+      // throws, the editor must be left exactly as it was. The earlier cut
+      // set recording = true up front, so a failure here froze the render
+      // loop with no way back.
+      try {
+        canvas.width = w; canvas.height = h;
+        gl.viewport(0, 0, w, h);
+        stream = canvas.captureStream(0);   // manual: frames only on request
+        const track = stream.getVideoTracks()[0];
+        if (!track || typeof track.requestFrame !== 'function') throw new Error('no manual frame control');
+        // avc1 first where hardware-backed; then vp8, which encodes a lot
+        // faster than vp9 and is plenty for stars on black.
+        const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp8',
+                      'video/webm;codecs=vp9', 'video/webm']
+                     .find(t => MediaRecorder.isTypeSupported(t)) || '';
+        const rec = new MediaRecorder(stream,
+          mime ? { mimeType: mime, videoBitsPerSecond: 16000000 } : undefined);
+        const chunks = [];
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        rec.onstop = () => {
+          const a = active;
+          const cancelled = a && a.cancelled;
+          finish();
+          if (cancelled) return;
+          const blob = new Blob(chunks, { type: (mime.split(';')[0] || 'video/webm') });
+          if (!blob.size) return;
+          const url = URL.createObjectURL(blob);
+          const ext = blob.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+          // Direct save works standalone; the sandboxed artifact webview
+          // blocks it, so the overlay is the path that always works.
+          const dl = document.createElement('a');
+          dl.href = url;
+          dl.download = 'galaxy_dive_' + w + 'x' + h + '.' + ext;
+          dl.click();
+          video.src = url;
+          overlay.classList.add('open');
+        };
 
-      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-      rec.onstop = () => {
-        // Stopping the RECORDER does not stop the STREAM: its track would
-        // go on pulling frames off the canvas for the life of the page,
-        // and every further capture would stack another one.
-        stream.getTracks().forEach(t => t.stop());
-        recTrack = null; recStep = null;
+        active = { rec, stream, oldW, oldH, cancelled: false };
+        recTrack = track;
+        recording = true;
+        recClock = recStart = Date.now();
+        const wall0 = Date.now();
+        let n = 0, dived = false;
+
+        // Called from frame() right after each draw. One drawn frame = one
+        // captured frame = one fixed clock step, so the clip is smooth at
+        // REC_FPS regardless of how long the draw took.
+        recStep = () => {
+          if (recTrack) recTrack.requestFrame();
+          recClock += REC_STEP;
+          n++;
+          const el = recClock - recStart;
+          const secs = (Date.now() - wall0) / 1000;
+          const eta = n > 4 ? Math.round(secs / n * (FRAMES - n)) : null;
+          recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
+          recText.textContent = 'Rendering ' + Math.min(n, FRAMES) + '/' + FRAMES + ' frames'
+            + (eta !== null ? '  ~' + eta + 's left' : '');
+          if (!dived && el >= LEAD) { dived = true; startTransition(true); }
+          if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
+        };
+
+        recBtn.disabled = true;
+        recFill.style.width = '0%';
+        recText.textContent = 'Rendering 0/' + FRAMES + ' frames';
+        recStatus.classList.add('on');
+        rec.start();
+      } catch (err) {
+        if (stream) stream.getTracks().forEach(t => t.stop());
         canvas.width = oldW; canvas.height = oldH;
         gl.viewport(0, 0, oldW, oldH);
-        recording = false;
+        recording = false; recStep = null; recTrack = null; active = null;
         recBtn.disabled = false;
-        recStatus.classList.remove('on');
-        const blob = new Blob(chunks, { type: (mime.split(';')[0] || 'video/webm') });
-        const url = URL.createObjectURL(blob);
-        const ext = blob.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
-        // Direct save works standalone; the sandboxed artifact webview
-        // blocks it, so the overlay below is the path that always works.
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'galaxy_dive_' + w + 'x' + h + '.' + ext;
-        a.click();
-        video.src = url;
-        overlay.classList.add('open');
-      };
-
-      // Called from frame() immediately after each draw.
-      recStep = () => {
-        if (recTrack) recTrack.requestFrame();
-        recClock += REC_STEP;
-        const el = recClock - recStart;
-        recStatus.textContent = Math.min(100, Math.round(el / TOTAL * 100)) + '%';
-        if (!dived && el >= LEAD) { dived = true; startTransition(true); }
-        if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
-      };
-
-      recBtn.disabled = true;
-      recStatus.classList.add('on');
-      rec.start();
+        recStatus.classList.add('on');
+        recText.textContent = 'Could not start: ' + err.message;
+        console.error('capture failed', err);
+        setTimeout(() => recStatus.classList.remove('on'), 4000);
+      }
     });
   })();
 
@@ -2051,7 +2112,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (isZooming) return;
     transitionTarget = toBoom ? 1.0 : 0.0;
     isZooming = true;
-    zoomStartTime = recording ? recClock : Date.now();
+    zoomStartTime = (recording && recStep) ? recClock : Date.now();
     boomBtn.disabled = true;
     boomBtn.style.opacity = '0';
     boomBtn.style.pointerEvents = 'none';
@@ -2103,7 +2164,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       requestAnimationFrame(frame);
       return;
     }
-    const now = recording ? recClock : Date.now();
+    // recStep is what advances recClock, so fall back to wall time if it
+    // is ever missing -- otherwise `now` would freeze and so would the
+    // whole render loop, with no way for the user to recover.
+    const now = (recording && recStep) ? recClock : Date.now();
     const delta = (now - lastFrame) / 1000.0;
     lastFrame = now;
     twinkleTime += delta; // always real-time, regardless of dive/rotation
