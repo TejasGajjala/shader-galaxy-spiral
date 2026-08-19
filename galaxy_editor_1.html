@@ -48,6 +48,59 @@
   }
   #boom-btn:hover { box-shadow: 0 3px 10px rgba(124, 106, 247, 0.4); }
   #boom-btn:active { box-shadow: 0 1px 4px rgba(124, 106, 247, 0.2); }
+  #fs-btn {
+    position: absolute; top: 14px; left: 14px; z-index: 7;
+    width: 38px; height: 38px; border-radius: 50%; border: none;
+    cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 22, 40, 0.55); color: rgba(255, 255, 255, 0.8);
+    transition: opacity 0.35s ease, background 0.15s ease;
+  }
+  #fs-btn:hover { background: rgba(124, 106, 247, 0.55); color: #fff; }
+  #fs-btn svg { width: 18px; height: 18px; }
+
+  /* Fullscreen: drop the phone frame entirely -- no border, no radius, no
+     shadow -- so the canvas is edge to edge on black. Written as two rules
+     because a selector list containing an unrecognised pseudo-class is
+     discarded WHOLE, which would take the standard one down with it. */
+  #phone:fullscreen {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh; max-width: none; max-height: none;
+    border: none; border-radius: 0; box-shadow: none; background: #000;
+  }
+  #phone:-webkit-full-screen {
+    position: fixed; inset: 0;
+    width: 100vw; height: 100vh; max-width: none; max-height: none;
+    border: none; border-radius: 0; box-shadow: none; background: #000;
+  }
+  /* Same presentation without the Fullscreen API, for when it is refused
+     -- notably inside the artifact's iframe, which only gets fullscreen if
+     the host grants it. Fills the viewport rather than the display, so the
+     browser chrome stays, but the frame is gone and the canvas is edge to
+     edge on black, which is what a screen recording needs. */
+  #phone.fs-fake {
+    position: fixed; inset: 0; z-index: 40;
+    width: 100vw; height: 100vh; max-width: none; max-height: none;
+    border: none; border-radius: 0; box-shadow: none; background: #000;
+  }
+  /* Controls fade out after a few idle seconds in fullscreen and return on
+     the next pointer move, so a screen recording catches the galaxy alone
+     without the chrome having to be removed. !important because the dive
+     drives #boom-btn's opacity through an inline style, which would
+     otherwise outrank these. */
+  #phone.fs-idle #fs-btn,
+  #phone.fs-idle #snap-btn,
+  #phone.fs-idle #rec-btn,
+  #phone.fs-idle #rec-size,
+  #phone.fs-idle #boom-btn,
+  #phone.fs-idle #pause-btn,
+  #phone.fs-idle .instant-row {
+    opacity: 0 !important; pointer-events: none !important;
+  }
+  #phone #boom-btn, #phone #pause-btn, #phone .instant-row, #phone #rec-size {
+    transition: opacity 0.35s ease;
+  }
+
   #snap-btn {
     position: absolute; top: 14px; right: 14px; z-index: 5;
     width: 38px; height: 38px; border-radius: 50%; border: none;
@@ -177,6 +230,9 @@
 <div id="layout">
 <div id="phone">
   <canvas id="galaxy-canvas"></canvas>
+  <button id="fs-btn" title="Fullscreen (Esc to exit)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
+  </button>
   <button id="snap-btn" title="Save high-res snapshot (PNG)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
   </button>
@@ -1852,10 +1908,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // which regime is live; the virtual clock applies only to the first.
   let recManual = false;
 
+  // Backing-store budget. Fullscreen on a retina display would otherwise
+  // ask for clientWidth * clientHeight * 4 -- a 1440p screen at dpr 2 is
+  // ~14.7 Mpx, over 20x the phone frame's ~0.66 Mpx, which this shader
+  // cannot draw at any usable rate. Cap the total and scale both axes by
+  // the same factor (aspect preserved, so framing is untouched); CSS
+  // stretches the result to fill. ~2.2 Mpx is 1080p-class, still far
+  // sharper than the phone frame and comfortably real-time. The phone
+  // frame never approaches the cap, so windowed rendering is unchanged.
+  const MAX_BACKING_PX = 2200000;
+
   function resize() {
     if (recording) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const w = canvas.clientWidth * dpr, h = canvas.clientHeight * dpr;
+    let w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
+    if (w * h > MAX_BACKING_PX) {
+      const k = Math.sqrt(MAX_BACKING_PX / (w * h));
+      w = Math.round(w * k); h = Math.round(h * k);
+    }
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
   }
   new ResizeObserver(resize).observe(canvas);
@@ -1900,6 +1970,90 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     const close = () => { overlay.classList.remove('open'); overlay.querySelector('img').src = ''; };
     overlay.querySelector('.snap-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  })();
+
+  // Fullscreen presentation. The phone frame is the authoring context, not
+  // the deliverable -- for a screen recording it just bakes a bezel and a
+  // ~390 px canvas into the capture. Fullscreen hands the canvas the whole
+  // display instead, so the recording is made at the screen's own
+  // resolution and the backing store follows via the ResizeObserver
+  // (bounded by MAX_BACKING_PX).
+  (() => {
+    const phone = document.getElementById('phone');
+    const fsBtn = document.getElementById('fs-btn');
+    const note = document.getElementById('rec-status');
+    const noteText = document.getElementById('rec-text');
+    const EXPAND = '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>';
+    const SHRINK = '<path d="M3 8h3a2 2 0 0 0 2-2V3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M21 16h-3a2 2 0 0 0-2 2v3"/>';
+
+    const isReal = () => document.fullscreenElement === phone || document.webkitFullscreenElement === phone;
+    const isFake = () => phone.classList.contains('fs-fake');
+    const isFs = () => isReal() || isFake();
+
+    // Viewport fill, used when the Fullscreen API is unavailable or says
+    // no. The ResizeObserver picks up the new box either way.
+    function enterFake(why) {
+      phone.classList.add('fs-fake');
+      document.body.style.overflow = 'hidden';
+      if (why) {
+        note.classList.add('on');
+        noteText.textContent = why;
+        setTimeout(() => { if (!recording) note.classList.remove('on'); }, 3500);
+      }
+      onFsChange();
+    }
+    function exitFake() {
+      phone.classList.remove('fs-fake');
+      document.body.style.overflow = '';
+      onFsChange();
+    }
+
+    fsBtn.addEventListener('click', () => {
+      if (isReal()) { (document.exitFullscreen || document.webkitExitFullscreen).call(document); return; }
+      if (isFake()) { exitFake(); return; }
+      const req = phone.requestFullscreen || phone.webkitRequestFullscreen;
+      if (!req) { enterFake('Filling the window \u2014 this browser has no fullscreen API'); return; }
+      let r;
+      try { r = req.call(phone); }
+      catch (e) { enterFake('Filling the window \u2014 fullscreen was blocked here'); return; }
+      if (r && r.catch) {
+        r.catch(() => enterFake('Filling the window \u2014 fullscreen was blocked here'));
+      } else {
+        // Prefixed implementations return undefined instead of a promise,
+        // so there is nothing to await -- check shortly after instead.
+        setTimeout(() => { if (!isReal()) enterFake('Filling the window \u2014 fullscreen was blocked here'); }, 350);
+      }
+    });
+
+    // Esc leaves the API's fullscreen on its own; the fill mode needs it
+    // wired up, or the only way out would be the (fading) button.
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && isFake()) exitFake(); });
+
+    // Idle fade, live only in fullscreen: any pointer or key activity shows
+    // the controls and restarts the timer; going quiet hides them again, so
+    // a recording of a hands-off dive has no UI in it. The controls become
+    // pointer-transparent while hidden, but the events still reach #phone
+    // underneath, so a tap or a nudge always brings them back.
+    let idleTimer = null;
+    const wake = () => {
+      phone.classList.remove('fs-idle');
+      clearTimeout(idleTimer);
+      if (isFs()) idleTimer = setTimeout(() => phone.classList.add('fs-idle'), 2500);
+    };
+    ['pointermove', 'pointerdown', 'keydown', 'wheel'].forEach(
+      (ev) => phone.addEventListener(ev, wake, { passive: true }));
+
+    function onFsChange() {
+      fsBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+        + (isFs() ? SHRINK : EXPAND) + '</svg>';
+      fsBtn.title = isFs() ? 'Exit fullscreen (Esc)' : 'Fullscreen (Esc to exit)';
+      if (isFs()) { wake(); } else { clearTimeout(idleTimer); phone.classList.remove('fs-idle'); }
+      // The element's box changes on both transitions; the ResizeObserver
+      // catches it, but ask for a repaint in case the dive is paused.
+      pausedDirty = true;
+    }
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
   })();
 
   // HD dive capture. Screen-recording the phone frame yields whatever the
