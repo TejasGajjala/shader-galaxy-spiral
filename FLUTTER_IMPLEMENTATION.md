@@ -40,13 +40,13 @@ reorder declarations there without rebuilding this table.
 | 7 | `uArmCount` | 2 |  |
 | 8 | `uArmWinding` | 18.5 |  |
 | 9 | `uArmSpacing` | 1.12 | where the turns sit; does not change their count |
-| 10 | `uArmFalloff` | 1.00 | arm stars: outward density thinning (stars only) |
-| 11 | `uArmSpread` | 0.61 | arm stars: outward band widening, plateau (stars only) |
+| 10 | `uArmFalloff` | 0.70 | arm stars: outward density thinning (stars only) |
+| 11 | `uArmSpread` | 0.69 | arm stars: outward band widening, plateau (stars only) |
 | 12 | `uArmEdgeSkew` | 1.0 | arm stars: hard inner edge / feathered outer (stars only) |
-| 13 | `uRimCoarse` | 0.0 | outermost star band: thins AND carries it further out (stars only) |
-| 14 | `uArmWobble` | 0.18 | static noise warp on the arm phase; windings wander, stars+smoke together |
+| 13 | `uRimCoarse` | 0.26 | outermost star band: thins AND carries it further out (stars only) |
+| 14 | `uArmWobble` | 0.19 | static noise warp on the arm phase; windings wander, stars+smoke together |
 | 15 | `uArmSmoke` | 0.74 | haze: smoky filaments tracing the arms |
-| 16 | `uSmokeSkew` | 0.5 | edge skew for the SMOKE arms (no width plateau); 0 = symmetric |
+| 16 | `uSmokeSkew` | 0.62 | edge skew for the SMOKE arms (no width plateau); 0 = symmetric |
 | 17 | `uCoreGlow` | 1.0 | haze: broad bright glow at the nucleus |
 | 18 | `uCoreGlowSpread` | 0.74 | core glow radial reach; intensity stays pinned |
 | 19 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
@@ -54,7 +54,7 @@ reorder declarations there without rebuilding this table.
 | 21 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
 | 22 | `uFlare` | 1.0 | star diffraction flares, final dive stretch |
 | 23 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 24 | `uGasClouds` | 0.22 | drifting gas-cloud layer between windings |
+| 24 | `uGasClouds` | 0.15 | drifting gas-cloud layer between windings |
 | 25 | `uOvalness` | 1.05 |  |
 | 26 | `uCamTilt` | 1.26 | radians off top-down; dive-animated — §6 |
 | 27 | `uCompactness` | 1.88 |  |
@@ -65,11 +65,11 @@ reorder declarations there without rebuilding this table.
 | 32 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
 | 33 | `uPxSize` | computed | AA floor — §7 |
 | 34 | `uCoreMode` | 0 | 0 = black hole, 1 = white core |
-| 35 | `uBlackHoleSize` | 0.041 |  |
-| 36–38 | `uCenterColor` | 0.251, 0.322, 0.490 | boom palette |
-| 39–41 | `uArmColor` | 0.180, 0.580, 0.996 | boom |
-| 42–44 | `uOuterHazeColor` | 0.267, 0.788, 0.980 | boom |
-| 45–47 | `uStarColor` | 0.522, 0.980, 1.000 | boom |
+| 35 | `uBlackHoleSize` | 0.049 |  |
+| 36–38 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
+| 39–41 | `uArmColor` | 0.000, 0.482, 1.000 | boom |
+| 42–44 | `uOuterHazeColor` | 0.259, 0.345, 1.000 | boom |
+| 45–47 | `uStarColor` | 1.000, 1.000, 1.000 | boom |
 | 48–50 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
 | 51–53 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
 | 54–56 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
