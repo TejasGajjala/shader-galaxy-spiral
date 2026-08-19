@@ -1813,6 +1813,18 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Held true while an HD capture owns the backing store, so the observer
   // cannot shrink the canvas back to its on-screen size mid-recording.
   let recording = false;
+  // Capture drives a VIRTUAL clock rather than wall time. An HD backing
+  // store is 4-7x the fragment work of the on-screen size, so the shader
+  // cannot hold 60 fps there -- captured in real time that lands as a
+  // stuttering app and a choppy file. Stepping a fixed dt per drawn frame
+  // instead decouples playback from render speed: every frame is rendered
+  // and captured exactly once, so the clip is smooth at REC_FPS no matter
+  // how slow a single frame was. The cost moves to wall-clock -- a 10 s
+  // clip takes longer than 10 s to produce -- which is the right trade.
+  // frame() reads recClock in place of Date.now() while this is set, and
+  // calls recStep() after each draw.
+  const REC_FPS = 30, REC_STEP = 1000 / REC_FPS;
+  let recClock = 0, recStart = 0, recTrack = null, recStep = null;
 
   function resize() {
     if (recording) return;
@@ -1895,7 +1907,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     // PULSE 1000 + zoom 5000 + hold 700 + fade 1500, per frame()'s dive
     // branch; plus a second at rest to open on and a beat to land on.
+    // These are CLIP milliseconds, measured on the virtual clock.
     const LEAD = 1000, DIVE = 8200, TAIL = 800;
+    const TOTAL = LEAD + DIVE + TAIL;
 
     recBtn.addEventListener('click', () => {
       if (recording) return;
@@ -1911,23 +1925,37 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       const [w, h] = recSize.value.split('x').map(Number);
       const oldW = canvas.width, oldH = canvas.height;
       recording = true;
+      recClock = recStart = Date.now();
       canvas.width = w; canvas.height = h;
       gl.viewport(0, 0, w, h);
 
+      // captureStream(0) is MANUAL mode: the track emits a frame only when
+      // requestFrame() asks, never on its own schedule. That is what lets
+      // the clip run on the virtual clock instead of the wall clock -- and
+      // it means a slow frame delays the capture rather than dropping it.
+      const stream = canvas.captureStream(0);
+      recTrack = stream.getVideoTracks()[0];
       const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9',
                     'video/webm;codecs=vp8', 'video/webm']
                    .find(t => MediaRecorder.isTypeSupported(t)) || '';
-      const rec = new MediaRecorder(canvas.captureStream(60),
+      const rec = new MediaRecorder(stream,
         mime ? { mimeType: mime, videoBitsPerSecond: 24000000 } : undefined);
       const chunks = [];
+      let dived = false;
+
       rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
       rec.onstop = () => {
+        // Stopping the RECORDER does not stop the STREAM: its track would
+        // go on pulling frames off the canvas for the life of the page,
+        // and every further capture would stack another one.
+        stream.getTracks().forEach(t => t.stop());
+        recTrack = null; recStep = null;
         canvas.width = oldW; canvas.height = oldH;
         gl.viewport(0, 0, oldW, oldH);
         recording = false;
         recBtn.disabled = false;
         recStatus.classList.remove('on');
-        const blob = new Blob(chunks, { type: mime.split(';')[0] || 'video/webm' });
+        const blob = new Blob(chunks, { type: (mime.split(';')[0] || 'video/webm') });
         const url = URL.createObjectURL(blob);
         const ext = blob.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
         // Direct save works standalone; the sandboxed artifact webview
@@ -1940,19 +1968,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         overlay.classList.add('open');
       };
 
+      // Called from frame() immediately after each draw.
+      recStep = () => {
+        if (recTrack) recTrack.requestFrame();
+        recClock += REC_STEP;
+        const el = recClock - recStart;
+        recStatus.textContent = Math.min(100, Math.round(el / TOTAL * 100)) + '%';
+        if (!dived && el >= LEAD) { dived = true; startTransition(true); }
+        if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
+      };
+
       recBtn.disabled = true;
       recStatus.classList.add('on');
-      const total = LEAD + DIVE + TAIL;
-      const t0 = Date.now();
-      const tick = setInterval(() => {
-        const left = Math.max(0, total - (Date.now() - t0));
-        recStatus.textContent = (left / 1000).toFixed(1) + 's';
-        if (left <= 0) clearInterval(tick);
-      }, 100);
-
       rec.start();
-      setTimeout(() => startTransition(true), LEAD);
-      setTimeout(() => { clearInterval(tick); if (rec.state !== 'inactive') rec.stop(); }, total);
     });
   })();
 
@@ -2023,7 +2051,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if (isZooming) return;
     transitionTarget = toBoom ? 1.0 : 0.0;
     isZooming = true;
-    zoomStartTime = Date.now();
+    zoomStartTime = recording ? recClock : Date.now();
     boomBtn.disabled = true;
     boomBtn.style.opacity = '0';
     boomBtn.style.pointerEvents = 'none';
@@ -2075,7 +2103,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       requestAnimationFrame(frame);
       return;
     }
-    const now = Date.now();
+    const now = recording ? recClock : Date.now();
     const delta = (now - lastFrame) / 1000.0;
     lastFrame = now;
     twinkleTime += delta; // always real-time, regardless of dive/rotation
@@ -2208,6 +2236,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uFade, currentFade);
     gl.uniform2f(U.iResolution, gl.canvas.width, gl.canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    // Capture this exact frame, then advance the virtual clock one step.
+    if (recording && recStep) recStep();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
