@@ -60,19 +60,42 @@
   /* Snapshot overlay: the sandboxed artifact webview blocks anchor
      downloads, so the high-res render is shown in-page instead and saved
      via the browser's own "Save image as..." (needs no permission). */
-  #snap-overlay {
+  #rec-btn {
+    position: absolute; top: 14px; right: 60px; z-index: 5;
+    width: 38px; height: 38px; border-radius: 50%; border: none;
+    cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 22, 40, 0.55); color: rgba(255, 255, 255, 0.8);
+  }
+  #rec-btn:hover { background: rgba(217, 70, 239, 0.55); color: #fff; }
+  #rec-btn[disabled] { cursor: default; background: rgba(217, 70, 239, 0.75); color: #fff; }
+  #rec-btn svg { width: 18px; height: 18px; }
+  /* Live countdown while capturing, so the run is visibly bounded. */
+  #rec-status {
+    position: absolute; top: 20px; right: 104px; z-index: 5;
+    font-size: 11px; font-weight: 600; letter-spacing: 0.04em;
+    color: #f0abfc; display: none; font-variant-numeric: tabular-nums;
+  }
+  #rec-status.on { display: block; }
+  #rec-size {
+    position: absolute; top: 58px; right: 14px; z-index: 5;
+    background: rgba(20, 22, 40, 0.75); color: rgba(255,255,255,0.85);
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+    font-size: 10px; padding: 3px 5px; cursor: pointer;
+  }
+  #snap-overlay, #rec-overlay {
     position: fixed; inset: 0; z-index: 50; display: none;
     background: rgba(5, 6, 12, 0.92);
     align-items: center; justify-content: center; flex-direction: column;
     gap: 12px; padding: 24px;
   }
-  #snap-overlay.open { display: flex; }
-  #snap-overlay img {
+  #snap-overlay.open, #rec-overlay.open { display: flex; }
+  #snap-overlay img, #rec-overlay video {
     max-width: 92vw; max-height: 82vh; border-radius: 8px;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8);
   }
-  #snap-overlay .snap-hint { font-size: 13px; color: rgba(255,255,255,0.75); text-align: center; }
-  #snap-overlay .snap-close {
+  #snap-overlay .snap-hint, #rec-overlay .snap-hint { font-size: 13px; color: rgba(255,255,255,0.75); text-align: center; }
+  #snap-overlay .snap-close, #rec-overlay .snap-close {
     border: none; border-radius: 8px; padding: 8px 18px; cursor: pointer;
     background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9);
   }
@@ -142,12 +165,27 @@
   <button id="snap-btn" title="Save high-res snapshot (PNG)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
   </button>
+  <button id="rec-btn" title="Record the dive at full HD">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="10"/></svg>
+  </button>
+  <span id="rec-status"></span>
+  <select id="rec-size" title="Recording resolution">
+    <option value="1080x2314">1080 &times; 2314</option>
+    <option value="1440x3086">1440 &times; 3086</option>
+    <option value="1920x1080">1920 &times; 1080</option>
+  </select>
   <button id="boom-btn">Let's boom</button>
   <button id="pause-btn">Pause</button>
   <div id="snap-overlay">
     <img alt="High-res galaxy snapshot" />
     <div class="snap-hint">Right-click (desktop) or long-press (mobile) the image and choose
       "Save image as..." &mdash; the sandboxed webview blocks direct downloads.</div>
+    <button class="snap-close">Close</button>
+  </div>
+  <div id="rec-overlay">
+    <video controls playsinline></video>
+    <div class="snap-hint">Right-click (desktop) or long-press (mobile) the video and choose
+      "Save video as..." &mdash; the sandboxed webview blocks direct downloads.</div>
     <button class="snap-close">Close</button>
   </div>
   <div class="instant-row">
@@ -1772,7 +1810,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyFromTextarea(); }
   });
 
+  // Held true while an HD capture owns the backing store, so the observer
+  // cannot shrink the canvas back to its on-screen size mid-recording.
+  let recording = false;
+
   function resize() {
+    if (recording) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = canvas.clientWidth * dpr, h = canvas.clientHeight * dpr;
     if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; gl.viewport(0,0,w,h); }
@@ -1819,6 +1862,98 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     const close = () => { overlay.classList.remove('open'); overlay.querySelector('img').src = ''; };
     overlay.querySelector('.snap-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  })();
+
+  // HD dive capture. Screen-recording the phone frame yields whatever the
+  // frame happens to be scaled to on screen (~390 px wide), which is why
+  // shared clips look soft. captureStream() records the canvas BACKING
+  // STORE, not the CSS box -- so enlarging the backing store to a real HD
+  // size and leaving the frame to display it scaled down gives a
+  // full-resolution file with no screen recorder, no window cropping and
+  // no compositor scaling. Same trick as the snapshot button, held across
+  // the whole dive instead of a single frame. frame() re-reads
+  // gl.canvas.width/height every pass for iResolution and uPxSize, so the
+  // star anti-aliasing is computed FOR the capture density -- a true
+  // re-render at size, not an upscale. The buttons are DOM siblings of the
+  // canvas, so none of them appear in the recording.
+  // 1080x2314 and 1440x3086 are the 392x840 authoring aspect (~9:19.3);
+  // 1920x1080 leans on the shader's own aspect correction, so the galaxy
+  // keeps its shape but sits in a wider frame than it was judged at.
+  (() => {
+    const recBtn = document.getElementById('rec-btn');
+    const recStatus = document.getElementById('rec-status');
+    const recSize = document.getElementById('rec-size');
+    const overlay = document.getElementById('rec-overlay');
+    const video = overlay.querySelector('video');
+    const close = () => {
+      overlay.classList.remove('open');
+      video.pause();
+      if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); video.load(); }
+    };
+    overlay.querySelector('.snap-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    // PULSE 1000 + zoom 5000 + hold 700 + fade 1500, per frame()'s dive
+    // branch; plus a second at rest to open on and a beat to land on.
+    const LEAD = 1000, DIVE = 8200, TAIL = 800;
+
+    recBtn.addEventListener('click', () => {
+      if (recording) return;
+      if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) {
+        recStatus.textContent = 'unsupported';
+        recStatus.classList.add('on');
+        setTimeout(() => recStatus.classList.remove('on'), 2500);
+        return;
+      }
+      // The dive runs normal -> boom, so start from rest in normal.
+      btnNormal.click();
+
+      const [w, h] = recSize.value.split('x').map(Number);
+      const oldW = canvas.width, oldH = canvas.height;
+      recording = true;
+      canvas.width = w; canvas.height = h;
+      gl.viewport(0, 0, w, h);
+
+      const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp9',
+                    'video/webm;codecs=vp8', 'video/webm']
+                   .find(t => MediaRecorder.isTypeSupported(t)) || '';
+      const rec = new MediaRecorder(canvas.captureStream(60),
+        mime ? { mimeType: mime, videoBitsPerSecond: 24000000 } : undefined);
+      const chunks = [];
+      rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+      rec.onstop = () => {
+        canvas.width = oldW; canvas.height = oldH;
+        gl.viewport(0, 0, oldW, oldH);
+        recording = false;
+        recBtn.disabled = false;
+        recStatus.classList.remove('on');
+        const blob = new Blob(chunks, { type: mime.split(';')[0] || 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const ext = blob.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+        // Direct save works standalone; the sandboxed artifact webview
+        // blocks it, so the overlay below is the path that always works.
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'galaxy_dive_' + w + 'x' + h + '.' + ext;
+        a.click();
+        video.src = url;
+        overlay.classList.add('open');
+      };
+
+      recBtn.disabled = true;
+      recStatus.classList.add('on');
+      const total = LEAD + DIVE + TAIL;
+      const t0 = Date.now();
+      const tick = setInterval(() => {
+        const left = Math.max(0, total - (Date.now() - t0));
+        recStatus.textContent = (left / 1000).toFixed(1) + 's';
+        if (left <= 0) clearInterval(tick);
+      }, 100);
+
+      rec.start();
+      setTimeout(() => startTransition(true), LEAD);
+      setTimeout(() => { clearInterval(tick); if (rec.state !== 'inactive') rec.stop(); }, total);
+    });
   })();
 
   // colorTransition: 0 = normal, 1 = boom (continuous mix in this shader).
