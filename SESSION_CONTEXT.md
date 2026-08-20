@@ -679,3 +679,38 @@ verifying manually). Statically reviewed for ES 1.00 legality and confirmed no
 dangling `sgn` reference, but per the gotcha below a stale program still
 renders -- if the canvas looks unchanged, check the console for a compile error
 before assuming the math is wrong.
+
+## Item 60: Continuous slab heights (parallel paths in the 1-3 range)
+
+**Reported:** the item-59 N-sheet fix only helps at high thickness; in the
+working range T = 1-3 each arm still reads as two parallel paths.
+
+**Why item 59 fell short:** N = floor(1 + T) resolves to just 2-3 sheets
+across 1-3, and the between-sheet filler was still the old independent
+fuzz, which saturates at T = 1 (min(T,1) * 0.004) -- and is further cut by
+the sub-cell clamp (0.45/GRID plane units; at the default tilt's parVec ~3
+the effective fuzz height is ~0.002). Sheets at +/-0.008T with ~0.002 of
+blur = thin plates with vacuum between, exactly at the default.
+
+**Fix (structural):** derive each star's height FROM the partition hash.
+The hash window that deals a star to a sheet, rescaled within that window,
+is the star's continuous height inside the sheet's slice of the slab;
+sheet frames sit at slice CENTERS and the residual (up to half a slice)
+rides the sub-cell offset. Residuals of one sheet reach exactly to the
+neighbouring sheet's, so the height distribution is uniform across
+[-h, +h] by construction -- repeated strips cannot form at any thickness.
+The old independent fuzz hash (17.9, 61.3) is gone; starFieldLevel /
+starField take a `resid` param (0 on the flat path, hDisk/N or hBulge/N on
+the thick path).
+
+N = clamp(ceil(2T), 2, 8): where the sub-cell clamp truncates residuals
+(far field), sheet pitch stays within ~2 star spacings -- below what the
+eye can group into rows. Cost now scales with the slider: default 1.35
+runs 3 sheets (was 2), T = 3 runs 6, cap 8. Flat path T = 0 stays
+bit-identical. hEnv rim taper unchanged (scales pitch and residuals
+together).
+
+Verified in headless Chromium: compiles clean, and canvas captures at
+T = 1.35 (default), 2.0 and 3.0 (bulge 0) each show one fuzzy band per
+winding -- no parallel paths. Commit is this one; synced across all three
+shader files (bodies byte-identical before and after).

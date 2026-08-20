@@ -305,7 +305,7 @@ float armStarKeep(float r) {
 // mechanism as the bulge's keep. It never touches the keep subset (.y),
 // so a star thinned out of the arms can still appear as a bulge star.
 // armKeep = 1.0 skips the roll entirely: bit-identical.
-vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll, float armKeep) {
+vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll, float armKeep, float resid) {
     float GRID = (8.0 + 18.0 * uStarDensity) * lvlScale;
     // BASE_R is the nominal star size; each star scales it by a hashed
     // multiplier below so the field has small/large variety.
@@ -323,8 +323,13 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
 
             // Sheet-partition gate (skipped entirely on the flat path,
             // where partHi = 1 -- keeps thickness 0 at zero extra cost).
+            // hp does double duty: the window it falls in deals the star
+            // to a sheet, and its position INSIDE that window is the
+            // star's continuous height within the sheet's slice of the
+            // slab (consumed by the resid shift below).
+            float hp = 0.0;
             if (partHi < 1.0 || partLo > 0.0) {
-                float hp = hash1(n + vec2(43.1, 7.7));
+                hp = hash1(n + vec2(43.1, 7.7));
                 if (hp < partLo || hp >= partHi) continue;
             }
 
@@ -348,21 +353,25 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
             float radius = max(starBase, pxFloor);
             float atten = (starBase / radius) * (starBase / radius);
 
-            // Slab fuzz: each star hovers a hashed hair off the plane, and
-            // parVec turns that height into its exact apparent shift in
-            // this pixel's plane frame. Clamped to stay sub-cell so the
-            // 3x3 lookup never clips a shifted star. Gated on the uniform
-            // (coherent branch): a flat disk skips the math entirely and
-            // renders the old look bit for bit.
+            // Slab placement: hp rescaled within this sheet's window is
+            // the star's continuous height inside the sheet's slice, and
+            // resid (half a slice, in height units) spans it so one
+            // sheet's stars reach exactly to the neighbouring sheet's --
+            // the slab fills edge to edge with NO repeated strips at any
+            // thickness. This replaces the old independent fuzz, which
+            // saturated at thickness 1 (min(T, 1) * 0.004) while the
+            // sheet spacing kept growing: past T ~ 1 every arm rendered
+            // as parallel plates with vacuum between. parVec turns the
+            // height into its exact apparent shift; the clamp keeps it
+            // sub-cell so the 3x3 lookup never clips a shifted star.
+            // Where the clamp bites (far field, deep LOD), nSheet keeps
+            // the sheet pitch within ~2 star spacings, too fine for the
+            // eye to group into rows. Gated on the uniform (coherent):
+            // a flat disk skips the math entirely, bit for bit.
             vec2 hOff = vec2(0.0);
-            if (uDiskThickness > 0.001) {
-                float hh = (hash1(n + vec2(17.9, 61.3)) - 0.5) * 2.0;
-                // Fuzz saturates at thickness 1: this fine lattice has no
-                // sub-cell budget past that. Slider range above 1 is
-                // carried by the floaters (which have headroom) and by the
-                // arm/bulge SHEET COUNT, which grows so the widening slab
-                // keeps its sheet spacing near this fuzz's reach.
-                hOff = parVec * (hh * min(uDiskThickness, 1.0) * 0.004);
+            if (uDiskThickness > 0.001 && resid > 0.0) {
+                float hpLocal = (hp - partLo) / max(partHi - partLo, 1e-5);
+                hOff = parVec * ((hpLocal * 2.0 - 1.0) * resid);
                 hOff *= min(1.0, (0.45 / GRID) / max(length(hOff), 1e-6));
             }
 
@@ -404,18 +413,18 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
 // subset. Each component cross-fades between LOD levels on its own --
 // the same scalar mix the old per-population passes ran -- so weighting
 // and combining stay downstream and bit-identical.
-vec2 starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll, float armKeep) {
+vec2 starField(vec2 p, float keep, vec2 parVec, float partLo, float partHi, float ang, vec3 pxCtl, float wantAll, float armKeep, float resid) {
     float lod = min(max(0.0, log2(1.0 / max(uZoom, 0.0001))), uMaxStarLod);
     float l0 = floor(lod);
     float f = lod - l0;
     float s0 = exp2(l0);
-    vec2 a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll, armKeep);
+    vec2 a = starFieldLevel(p, s0, l0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll, armKeep, resid);
     // The cross-fade weight f derives purely from uZoom, so this branch is
     // fully coherent; at rest (f = 0) it skips the second lattice level
     // entirely, halving the star pass. mix(a, b, 0) == a, so no visual
     // change where it fires.
     if (f < 0.001) return a;
-    vec2 b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll, armKeep);
+    vec2 b = starFieldLevel(p, s0 * 2.0, l0 + 1.0, keep, parVec, partLo, partHi, ang, pxCtl, wantAll, armKeep, resid);
     return mix(a, b, f);
 }
 
@@ -960,9 +969,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     }
     // Stars. Flat path (uDiskThickness = 0): the original single-plane
     // field, bit for bit, zero extra cost. Thick path: the SAME arm and
-    // bulge populations are dealt out across N exactly-shifted height
-    // sheets each -- N grows with the slider, see below (partition hash --
-    // no density change) -- with the arm
+    // bulge populations are dealt out across N height sheets each, every
+    // star at a continuous height inside its sheet's slice of the slab --
+    // N grows with the slider, see below (partition hash -- no density
+    // change) -- with the arm
     // mask and disk falloff evaluated at every sheet's own FOOTPRINT so
     // stars keep tracing the arms they belong to. Arms stay a thin slab;
     // the bulge gets ~3x the height (it's the puffy spheroid); the sparse
@@ -973,8 +983,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     } else if (uDiskThickness > 0.001) {
         // Rim height taper on the ARM slab: sheet footprints separate by
         // 2*h*parVec, and parVec grows ~1/denom toward the far rim -- at
-        // high tilt the two half-population sheets end up sampled ~0.4 r
-        // apart out there (the outermost pair separates the most).
+        // high tilt the outermost sheets end up sampled a large fraction
+        // of r apart out there.
         // While smoke covered the rim and the star
         // annulus died by ~1.4 that read as thickness; with the outer band
         // now naked scattered stars (armRadialFade to ~1.55), each sheet's
@@ -988,33 +998,41 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         float hEnv   = 1.0 - 0.85 * smoothstep(1.0, 1.5, length(pOval));
         float hDisk  = uDiskThickness * 0.008 * hEnv;  // arm slab half-height
         float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
-        // Sheet COUNT scales with the slider, so the slab stays FILLED.
-        // Adjacent sheets sit 2h/(N-1) apart, and the only thing blurring
-        // that quantization is the per-star sub-cell fuzz in
-        // starFieldLevel -- which saturates at thickness 1 (no sub-cell
-        // budget past that). With N pinned at 2 the spacing kept growing
-        // while the fuzz did not: by thickness 4.2 the two sheets sat ~7x
-        // their own thickness apart, so every arm ridge rendered as two
-        // solid plates with vacuum between them -- worst on the arms,
-        // which are thin ridges, and near-invisible on the bulge, which is
-        // a diffuse blob. N = 1 + thickness holds the spacing near its
-        // thickness-1 value instead. uDiskThickness is a uniform, so N is
-        // identical for every pixel and the break below stays fully
-        // coherent; thickness <= 1.35 (the default) still resolves to
-        // exactly 2 sheets -- bit-identical, and free. Constant bound +
+        // Sheets tile the slab in CONTIGUOUS slices, and every star sits
+        // at a continuous height inside its slice: the partition hash both
+        // deals the star to a sheet and, rescaled within the sheet's
+        // window, places it between the sheet planes (the resid shift in
+        // starFieldLevel). The height distribution is therefore uniform
+        // across [-h, +h] BY CONSTRUCTION -- repeated strips cannot form
+        // at any thickness. The previous scheme (fixed sheet heights plus
+        // an independent fuzz saturating at thickness 1) could not get
+        // there: through the 1-3 range it resolved to 2-3 sheets whose
+        // spacing dwarfed the fuzz, so every arm still read as parallel
+        // paths. nSheet ~ 2T keeps the sheet pitch within ~2 star spacings
+        // wherever the sub-cell clamp truncates the residuals (far field,
+        // deep LOD), which is too fine for the eye to group into rows; the
+        // hEnv rim taper shrinks pitch and residuals together, staying
+        // coherent. Population split is untouched: each sheet carries 1/N
+        // of the SAME field -- repartitioned, never duplicated -- so the
+        // star count is conserved exactly. Cost scales with the slider:
+        // the 1.35 default runs 3 sheets (was 2), thickness 3 runs 6, the
+        // cap is 8. uDiskThickness is a uniform, so N is identical for
+        // every pixel and the break stays fully coherent. Constant bound +
         // break because the editor targets GLSL ES 1.00 (WebGL1), which
-        // forbids a non-constant loop bound; 6 caps the unrolled size.
-        int   nSheet = int(clamp(floor(1.0 + uDiskThickness), 2.0, 6.0));
+        // forbids a non-constant loop bound; 8 caps the unrolled size.
+        int   nSheet = int(clamp(ceil(uDiskThickness * 2.0), 2.0, 8.0));
         float invN   = 1.0 / float(nSheet);
+        // Residual half-range per population: half of one slice, in the
+        // population's own height units, so residuals meet exactly at the
+        // slice boundaries -- no gap, no overlap.
+        float residArm   = hDisk * invN;
+        float residBulge = hBulge * invN;
         starsV = 0.0;
-        for (int s = 0; s < 6; s++) {
+        for (int s = 0; s < 8; s++) {
             if (s >= nSheet) break;
-            // Heights span [-h, +h] endpoint-inclusive, s = 0 being +h, so
-            // N = 2 reproduces the old +/- pair exactly. The partition
-            // window tiles [0,1) N ways on the SAME hash, so the field is
-            // repartitioned, never duplicated -- thickening spreads the
-            // same stars through the slab instead of breeding them.
-            float t   = 1.0 - 2.0 * float(s) / float(nSheet - 1);
+            // Sheet frames sit at slice CENTERS (s = 0 topmost): with the
+            // +/- half-slice residuals they tile [-h, +h] edge to edge.
+            float t   = 1.0 - (2.0 * float(s) + 1.0) * invN;
             float lo  = float(s) * invN;
             float hi  = lo + invN;
             // Arm sheet: footprint built in the unrotated frame (pBg) so
@@ -1036,7 +1054,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             if (aMask > 0.0005) {
                 // wantAll = 1 with the arm-thinning roll on .x: at
                 // armStarKeep = 1 this is the exact old keep=1 field.
-                starsV = max(starsV, aMask * starField(aRot, 0.0, parRot, lo, hi, ang, pxCtl, 1.0, armStarKeep(length(aOval))).x * 1.5);
+                starsV = max(starsV, aMask * starField(aRot, 0.0, parRot, lo, hi, ang, pxCtl, 1.0, armStarKeep(length(aOval)), residArm).x * 1.5);
             }
             // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
             // footprint -- near-flat over the core, collapsing hard with
@@ -1045,7 +1063,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             vec2 bRot = rotate(pBg - parVec * (t * hBulge), ang);
             float bKeep = min(uBulge * 2.4 * exp(-dot(bRot, bRot) * 7.0), 1.0);
             if (bKeep > 0.003) {
-                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0, 1.0).y * 1.5 * 0.8);
+                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0, 1.0, residBulge).y * 1.5 * 0.8);
             }
         }
         // Floater sheets: sparse chunky strays at the largest heights --
@@ -1078,7 +1096,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // stars): .x is the full field the arm mask weights, .y is the
         // bulgeKeep subset -- combined with the exact expressions the old
         // two full passes used, at half the lattice work.
-        vec2 sf = starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl, 1.0, armStarKeep(length(pOval)));
+        vec2 sf = starField(p, bulgeKeep, parRot, 0.0, 1.0, ang, pxCtl, 1.0, armStarKeep(length(pOval)), 0.0);
         starsV = max(starMask * sf.x * 1.5, sf.y * 1.5 * 0.8);
     }
 

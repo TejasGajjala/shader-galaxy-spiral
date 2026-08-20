@@ -253,7 +253,9 @@ the perspective foreshortening of the old squash factor.)
 ## 8. Performance notes
 
 - **Flat disk is the fast path.** `uDiskThickness = 0` renders the
-  original single-plane starfield; > 0 pays for two extra star sheets.
+  original single-plane starfield; > 0 pays for the height-sheet loop,
+  whose count scales with the slider (3 sheets at the 1.35 default,
+  ~2 per unit of thickness, capped at 8).
 - **The frame gets cheaper as the dive darkens.** Haze, gas clouds, and
   dust warp are all uniform-gated: the clouds are skipped past mid-dive,
   the smoke past `uZoom < 0.03`, and a far-field early-out skips the whole
