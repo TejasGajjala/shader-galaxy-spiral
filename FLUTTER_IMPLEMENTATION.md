@@ -38,29 +38,29 @@ reorder declarations there without rebuilding this table.
 | 5 | `uRotSpeed` | 0.036 | spin speed |
 | 6 | `uColorTransition` | 0.0 | 0 = normal palette, 1 = boom palette |
 | 7 | `uArmCount` | 2 |  |
-| 8 | `uArmWinding` | 18.5 |  |
-| 9 | `uArmSpacing` | 1.12 | where the turns sit; does not change their count |
+| 8 | `uArmWinding` | 19.5 |  |
+| 9 | `uArmSpacing` | 1.03 | where the turns sit; does not change their count |
 | 10 | `uArmFalloff` | 0.70 | arm stars: outward density thinning (stars only) |
 | 11 | `uArmSpread` | 0.69 | arm stars: outward band widening, plateau (stars only) |
 | 12 | `uArmEdgeSkew` | 1.0 | arm stars: hard inner edge / feathered outer (stars only) |
-| 13 | `uRimCoarse` | 0.26 | outermost star band: thins AND carries it further out (stars only) |
+| 13 | `uRimCoarse` | 0.22 | outermost star band: thins AND carries it further out (stars only) |
 | 14 | `uArmWobble` | 0.19 | static noise warp on the arm phase; windings wander, stars+smoke together |
-| 15 | `uArmSmoke` | 0.74 | haze: smoky filaments tracing the arms |
+| 15 | `uArmSmoke` | 0.80 | haze: smoky filaments tracing the arms |
 | 16 | `uSmokeSkew` | 0.62 | edge skew for the SMOKE arms (no width plateau); 0 = symmetric |
 | 17 | `uCoreGlow` | 1.0 | haze: broad bright glow at the nucleus |
-| 18 | `uCoreGlowSpread` | 0.74 | core glow radial reach; intensity stays pinned |
-| 19 | `uCorona` | 0.80 | haze: tight core bloom (BOOM MODE only) |
+| 18 | `uCoreGlowSpread` | 0.75 | core glow radial reach; intensity stays pinned |
+| 19 | `uCorona` | 0.82 | haze: tight core bloom (BOOM MODE only) |
 | 20 | `uBulge` | 1.5 | grows the radius of the packed central cluster |
 | 21 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
 | 22 | `uFlare` | 1.0 | star diffraction flares, final dive stretch |
 | 23 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 24 | `uGasClouds` | 0.15 | drifting gas-cloud layer between windings |
-| 25 | `uOvalness` | 1.05 |  |
+| 24 | `uGasClouds` | 0.43 | drifting gas-cloud layer between windings |
+| 25 | `uOvalness` | 1.09 |  |
 | 26 | `uCamTilt` | 1.26 | radians off top-down; dive-animated — §6 |
 | 27 | `uCompactness` | 1.88 |  |
-| 28 | `uStarDensity` | 3.48 |  |
+| 28 | `uStarDensity` | 3.68 |  |
 | 29 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
-| 30 | `uTwinkleFraction` | 0.14 |  |
+| 30 | `uTwinkleFraction` | 0.00 |  |
 | 31 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off (static per-star offsets) |
 | 32 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
 | 33 | `uPxSize` | computed | AA floor — §7 |
@@ -74,7 +74,7 @@ reorder declarations there without rebuilding this table.
 | 51–53 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
 | 54–56 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
 | 57–59 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
-| 60 | `uCenterSpread` | 0.5 |  |
+| 60 | `uCenterSpread` | 0.33 |  |
 
 Total: 61 floats.
 
