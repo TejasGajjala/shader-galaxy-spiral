@@ -714,3 +714,52 @@ Verified in headless Chromium: compiles clean, and canvas captures at
 T = 1.35 (default), 2.0 and 3.0 (bulge 0) each show one fuzzy band per
 winding -- no parallel paths. Commit is this one; synced across all three
 shader files (bodies byte-identical before and after).
+
+## Item 61: Load re-audit at the production defaults (design sign-off)
+
+New defaults landed in c936c8a (11 values; twinkle now OFF by default).
+Re-measured marginal costs on SwiftShader, 392x840, rest frame, normal
+mode -- absolute ms are software-raster, the RATIOS are the guide:
+
+| config                      | ms/frame | marginal vs base |
+|-----------------------------|----------|------------------|
+| base (new defaults)         | 352      | --               |
+| thickness 1.00 (2 sheets)   | 287      | 3rd sheet +64    |
+| thickness 3.00 (6 sheets)   | 512      | ~+53/sheet       |
+| thickness 0 (flat path)     | 163      | thick path = 54% of frame |
+| bulge 0                     | 328      | bulge sheets 24  |
+| smoke + coreGlow 0          | 319      | smoke stack 32   |
+| gasClouds 0                 | 348      | 4                |
+| corona 0                    | 352      | ~0               |
+| floor (all of the above 0)  | 149      |                  |
+| DIVE mid (LOD cross-fade)   | 418      | +19% over rest   |
+
+Shifts since the item-29 audit: the smoke stack fell from ~99 to ~32
+(glow trim + scale), and the DISK-THICKNESS SHEET LOOP is now the whole
+story -- 54% of the rest frame (3 arm walks + 3 bulge walks + 2 floater
+walks vs 1 flat walk), with each sheet costing ~53 (lattice walk + its
+own arm mask). The continuous-slab fix (item 60) added the 3rd sheet at
+the default: +64, +18% -- the price of the filled slab the design team
+approved. The dive is no longer the spike it was (+19% vs the old 2x):
+rest-frame cost is the production load story.
+
+New defaults themselves are perf-neutral vs the previous set (twinkle 0
+saves its hash-class cost; gasClouds 0.43 vs 0.15 changes nothing --
+haze layers cost by on/off, not value; starDensity is not a walk-cost
+lever).
+
+Ranked levers (none applied yet):
+1. Resolution cap on the host -- THE lever. 392x840 CSS on a 3x phone is
+   ~3.0 Mpx, 9x the bench. Render the FragmentProgram at <=2x DPR or a
+   fixed ~1-1.3 Mpx budget and upscale (the editor itself ships
+   MAX_BACKING_PX = 2.2 Mpx as precedent). Fraction saved ~= fraction of
+   pixels not shaded.
+2. Frame pacing at rest (already documented, FLUTTER_IMPLEMENTATION §8):
+   30 fps at rest / 60 in dive; rest motion is a 0.036 rad/s spin.
+3. Shader-side sheet-loop trims, in descending value / ascending risk:
+   share the arm mask across sheets when sheet offsets are sub-arm-width
+   (saves ~2 mask evals, est. -4-5% frame); thin the bulge to 2 sheets
+   (bulge is diffuse, est. -8 max, visual risk low but nonzero). Each
+   needs the pixel-identity harness before shipping.
+4. uMaxStarLod = 2 already caps the dive refill; leave it.
+
