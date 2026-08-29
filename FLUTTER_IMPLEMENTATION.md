@@ -34,7 +34,7 @@ reorder declarations there without rebuilding this table.
 | 0–1 | `iResolution` | canvas size | physical pixels (`size * dpr`) |
 | 2 | `iTime` | clock | rotation clock, **not** wall time — §4 |
 | 3 | `uZoom` | 1.0 | 1 = rest … →0 = dived |
-| 4 | `uFade` | 1.0 | 0 = black, used by the fade-back phase |
+| 4 | `uFade` | 1.0 | 0 = black. The dive no longer drives it (no fade-back phase); host-only |
 | 5 | `uRotSpeed` | 0.036 | spin speed |
 | 6 | `uColorTransition` | 0.0 | 0 = normal palette, 1 = boom palette |
 | 7 | `uArmCount` | 2 |  |
@@ -134,7 +134,7 @@ what makes the dive feel correct:
   **1× wall time at rest**, and during the zoom phase of the dive it runs
   at `5 × (1 + 3·depth³)` where `depth = 1 − zoom` — a Kepler-flavored
   spin-up from 5× to ~20× as the camera nears the core. Without it the
-  late dive looks frozen. During the pulse/hold/fade phases it drops back
+  late dive looks frozen. During the pulse and hold phases it drops back
   to 1×.
 
 > **`iTime` is NOT wall-clock seconds.** Feeding it seconds-since-mount
@@ -146,11 +146,17 @@ what makes the dive feel correct:
 
 ## 5. Dive choreography
 
-One dive = four phases, timed from the tap (all ms):
+One dive = three phases, timed from the tap (all ms):
 
 ```
-tap ──► PULSE 1000 ──► ZOOM 5000 (ease-in-out) ──► HOLD 700 ──► FADE 1500 ──► rest
+tap ──► PULSE 1000 ──► ZOOM 4000 (ease-in-out) ──► HOLD 1000 ──► rest (instant)
 ```
+
+The dive does **not** change mode. It returns to the resting view exactly
+as it left — same palette, same core style — so `uColorTransition` and
+`uCoreMode` are owned solely by the mode buttons. There is no fade-back
+phase: at 6000 ms `zoom` and the tilt snap home in one frame, in plain
+sight. Cover that cut at the app level if the dive is not navigating away.
 
 Reference driver, mirroring the editor's `frame()` exactly:
 
@@ -158,16 +164,18 @@ Reference driver, mirroring the editor's `frame()` exactly:
 class GalaxyDriver {
   double shaderTime = 0, twinkleTime = 0;
   double zoom = 1, fade = 1, hazePulse = 1;
-  double colorTransition = 0, coreMode = 0, camTiltSlider = 1.27;
+  double colorTransition = 0, coreMode = 0, camTiltSlider = 1.26;
   bool   diving = false;
-  double _diveElapsedMs = 0, _target = 1;
+  double _diveElapsedMs = 0;
 
-  static const _pulse = 1000.0, _zoomMs = 5000.0, _hold = 700.0, _fade = 1500.0;
+  static const _pulse = 1000.0, _zoomMs = 4000.0, _hold = 1000.0;
   static const _zoomEase = 0.75; // ease-in-out strength; 0 = linear zoom
   static double _ss(double x) { x = x.clamp(0.0, 1.0); return x * x * (3 - 2 * x); }
 
-  void startDive({required bool toBoom}) {
-    diving = true; _diveElapsedMs = 0; _target = toBoom ? 1 : 0;
+  /// Plays the dive. It carries no target mode: the view comes back as it
+  /// left. Set colorTransition / coreMode from your mode buttons instead.
+  void startDive() {
+    diving = true; _diveElapsedMs = 0;
   }
 
   /// dt = seconds since last tick.
@@ -204,14 +212,9 @@ class GalaxyDriver {
     } else if (e < _pulse + _zoomMs + _hold) {
       shaderTime += dt;
       zoom = 0.0001; fade = 1;                          // black beat on the core
-    } else if (e < _pulse + _zoomMs + _hold + _fade) {
-      shaderTime += dt;
-      // Swaps hidden behind black: palette, core style, zoom + tilt home.
-      colorTransition = _target;
-      coreMode = _target > 0.5 ? 1 : 0;
-      zoom = 1;
-      fade = ((e - (_pulse + _zoomMs + _hold)) / _fade).clamp(0.0, 1.0);
     } else {
+      // Straight back to rest, same mode. zoom and tilt snap home in one
+      // frame with no black to cover it -- intended.
       shaderTime += dt;
       diving = false; zoom = 1; fade = 1;               // re-enable the button here
     }
@@ -223,7 +226,9 @@ class GalaxyDriver {
 
 The camera leans toward top-down as it closes in — exponential ease-in on
 zoom progress, so the whole descent lands in the final stretch. The floor
-is **60% of the resting tilt** (~44° with the 1.27 default): full top-down
+is an **absolute 40°** off top-down, not a fraction of the slider, so the
+plunge lands at the same angle whatever the resting tilt is (clamped to
+the slider, so a tilt already below 40° is never tilted UP). Full top-down
 loses the oblique stretch and lets the hole swallow the finale.
 
 ```dart
@@ -231,12 +236,15 @@ double currentTilt() {
   final dp = (1.0 - zoom).clamp(0.0, 1.0);
   const e0 = 1.0 / 1024.0;                       // 2^-10
   final eased = (math.pow(2.0, 10.0 * (dp - 1.0)) - e0) / (1.0 - e0);
-  return camTiltSlider * (1.0 - 0.40 * eased);   // -> uCamTilt (idx 26)
+  const floorRad = 40.0 * math.pi / 180.0;       // absolute 40 deg
+  final tiltFloor = math.min(camTiltSlider, floorRad);
+  return camTiltSlider + (tiltFloor - camTiltSlider) * eased;  // -> uCamTilt (idx 26)
 }
 ```
 
-Normalized so `zoom = 1` gives exactly the slider value; the fade phase
-resets `zoom` to 1 behind black, which snaps the tilt home invisibly.
+Normalized so `zoom = 1` gives exactly the slider value. With the
+fade-back phase gone, the return to rest snaps the tilt home in one
+visible frame.
 
 ## 7. uPxSize (star anti-alias floor)
 
@@ -322,6 +330,6 @@ DPR you actually render at (§7), and restore everything when
   normal palette at indices 48–59.
 - **Boom mode**: `uColorTransition = 1`, `uCoreMode = 1` (white core),
   boom palette at indices 36–47.
-- A dive **into** boom: start in normal, `startDive(toBoom: true)` — the
-  palette and core swap happen automatically behind the fade. The editor's
-  instant-mode buttons are just these same swaps without the dive.
+- The dive does **not** switch modes. `startDive()` returns to the mode it
+  began in; set `uColorTransition` and `uCoreMode` from your own mode
+  buttons, either instantly or on whatever transition the app wants.

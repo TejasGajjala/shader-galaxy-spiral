@@ -2106,10 +2106,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     overlay.querySelector('.snap-close').addEventListener('click', close);
     overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
 
-    // PULSE 1000 + zoom 5000 + hold 700 + fade 1500, per frame()'s dive
-    // branch; plus a second at rest to open on and a beat to land on.
+    // PULSE 1000 + zoom 4000 + hold 1000, per frame()'s dive branch;
+    // plus a second at rest to open on and a beat to land on.
     // These are CLIP milliseconds, measured on the virtual clock.
-    const LEAD = 1000, DIVE = 8200, TAIL = 800;
+    const LEAD = 1000, DIVE = 6000, TAIL = 800;
     const TOTAL = LEAD + DIVE + TAIL;
     const FRAMES = Math.round(TOTAL / REC_STEP);
 
@@ -2217,7 +2217,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
               recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
               recText.textContent = 'Rendering ' + Math.min(n, FRAMES) + '/' + FRAMES + ' frames'
                 + (eta !== null ? '  ~' + eta + 's left' : '');
-              if (!dived && el >= LEAD) { dived = true; startTransition(true); }
+              if (!dived && el >= LEAD) { dived = true; startDive(); }
               if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
             }
           // Automatic: the track samples itself, so the dive must play at
@@ -2227,7 +2227,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
               const el = Date.now() - wall0;
               recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
               recText.textContent = 'Recording live  ' + (Math.max(0, TOTAL - el) / 1000).toFixed(1) + 's left';
-              if (!dived && el >= LEAD) { dived = true; startTransition(true); }
+              if (!dived && el >= LEAD) { dived = true; startDive(); }
               if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
             };
 
@@ -2270,7 +2270,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   let currentFade = 1.0;
   let isZooming = false;
   let zoomStartTime = 0;
-  let transitionTarget = 1.0;
   let shaderTime = 0.0;
   let twinkleTime = 0.0; // wall-clock; never accelerated by the dive
   let hazePulse = 1.0;   // dive-start nebula "come alive" beat (uHazePulse)
@@ -2313,9 +2312,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     btnBoom.style.color = isBoom ? '#fff' : 'rgba(255,255,255,0.85)';
   }
 
-  function startTransition(toBoom) {
+  // Plays the dive. It no longer carries a target mode -- the view comes
+  // back exactly as it left -- so mode switching lives only in the
+  // Normal/Boom buttons.
+  function startDive() {
     if (isZooming) return;
-    transitionTarget = toBoom ? 1.0 : 0.0;
     isZooming = true;
     zoomStartTime = (recording && recManual && recStep) ? recClock : Date.now();
     boomBtn.disabled = true;
@@ -2340,7 +2341,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     pauseBtn.style.display = 'none';
   }
 
-  boomBtn.addEventListener('click', () => startTransition(colorTransition < 0.5));
+  boomBtn.addEventListener('click', () => startDive());
   btnNormal.addEventListener('click', () => {
     abortZoom();
     colorTransition = 0.0; currentZoom = 1.0; currentFade = 1.0;
@@ -2387,8 +2388,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       // and the overshoot bleeds off in the first dive moments. Stars
       // are deliberately untouched -- they hold steady while the haze
       // breathes, which is what sells it.
+      // Phase lengths from the tap. Zoom now ends at 5.0 s (PULSE +
+      // duration) and the core beat holds to 6.0 s, after which the view
+      // returns to rest immediately -- there is no fade-back phase.
       const PULSE = 1000;
-      const duration = 5000;
+      const duration = 4000;
+      const HOLD = 1000;
       const ss = (x) => { x = Math.min(1, Math.max(0, x)); return x * x * (3 - 2 * x); };
       // Zoom pacing: blend a smoothstep S-curve into the linear progress
       // so the dive eases IN and OUT -- slow off the mark, quickest
@@ -2428,29 +2433,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         currentZoom = Math.max(0.0001, 1.0 - pz);
         hazePulse = 1.0 + 0.25 * Math.max(0.0, 1.0 - t / 800); // settle the overshoot
         currentFade = 1.0;
-      } else if (elapsed < PULSE + duration + 700) {
+      } else if (elapsed < PULSE + duration + HOLD) {
         shaderTime += delta;
         currentZoom = 0.0001;
         currentFade = 1.0;
-      } else if (elapsed < PULSE + duration + 700 + 1500) {
-        shaderTime += delta;
-        colorTransition = transitionTarget;
-        // Core style follows the target mode (black hole in normal, white
-        // core in boom), same as the instant mode buttons. Switched while
-        // fully zoomed out so the swap is hidden behind the dive.
-        state.coreMode = transitionTarget > 0.5 ? 1 : 0;
-        updateCoreBtnLook();
-        gl.uniform1f(U.uCoreMode, state.coreMode);
-        currentZoom = 1.0;
-        const fadeProgress = (elapsed - (PULSE + duration + 700)) / 1500;
-        currentFade = Math.min(1.0, fadeProgress);
       } else {
+        // Dive over -- back to the resting view in the SAME mode it began
+        // in. The palette and core style are no longer touched here:
+        // switching modes belongs strictly to the Normal/Boom buttons, so
+        // there is nothing to hide and no fade-back phase. Zoom and tilt
+        // therefore snap home in one frame, with no black to cover the
+        // cut; that hard reset is the intended behaviour.
         shaderTime += delta;
         isZooming = false;
-        colorTransition = transitionTarget;
-        state.coreMode = transitionTarget > 0.5 ? 1 : 0;
-        updateCoreBtnLook();
-        gl.uniform1f(U.uCoreMode, state.coreMode);
         currentZoom = 1.0;
         currentFade = 1.0;
         boomBtn.disabled = false;
@@ -2458,9 +2453,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         boomBtn.style.opacity = '1';
         btnNormal.disabled = false;
         btnBoom.disabled = false;
-        setBoomBtnLook(colorTransition > 0.5);
-        setInstantLook(colorTransition > 0.5);
-        buildColorControls(); // rebind pickers to the mode just landed in
         pauseBtn.style.display = 'none';
         isPaused = false;
       }
@@ -2473,18 +2465,22 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // same oblique picture. Exponential ease-in on zoom progress: the
     // view is essentially untouched through the early and mid dive, and
     // the whole descent lands in the final stretch (the plunge). The
-    // floor stays at 60% of the slider tilt (~44 deg): fully top-down
-    // forfeits the oblique stretch that keeps distant stars in frame, so
-    // the hole would swallow the view early and eat the flare finale --
-    // and a near-axis end reads forced anyway; a partial lean-in sells
-    // the plunge while keeping the shot composed.
-    // Normalized so zoom 1 gives EXACTLY the slider value at rest; the
-    // fade phase resets zoom to 1 behind black, snapping the tilt home
-    // invisibly (same trick as the core-mode swap).
+    // floor is an ABSOLUTE 40 deg off top-down, not a fraction of the
+    // slider, so the plunge always lands at the same angle whatever the
+    // resting tilt is. Clamped to the slider so a resting tilt already
+    // shallower than 40 deg is never tilted UP by the dive. Fully
+    // top-down forfeits the oblique stretch that keeps distant stars in
+    // frame, so the hole would swallow the view early and eat the flare
+    // finale; a partial lean-in sells the plunge and keeps the shot
+    // composed. Normalized so zoom 1 gives EXACTLY the slider value at
+    // rest -- and with the fade-back phase gone, the return to rest snaps
+    // the tilt home in one frame, in plain sight.
     const dp = Math.min(1.0, Math.max(0.0, 1.0 - currentZoom));
     const E0 = 1.0 / 1024.0; // 2^-10, the easeInExpo baseline at dp = 0
     const eased = (Math.pow(2.0, 10.0 * (dp - 1.0)) - E0) / (1.0 - E0);
-    currentTilt = state.camTilt * (1.0 - 0.40 * eased);
+    const TILT_FLOOR = 40.0 * Math.PI / 180.0;
+    const tiltFloor = Math.min(state.camTilt, TILT_FLOOR);
+    currentTilt = state.camTilt + (tiltFloor - state.camTilt) * eased;
     gl.uniform1f(U.uCamTilt, currentTilt);
 
     gl.uniform1f(U.iTime, shaderTime);

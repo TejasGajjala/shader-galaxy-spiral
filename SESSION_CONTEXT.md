@@ -763,3 +763,35 @@ Ranked levers (none applied yet):
    needs the pixel-identity harness before shipping.
 4. uMaxStarLod = 2 already caps the dive refill; leave it.
 
+
+## Item 62: Dive is now mode-neutral, 6.0 s, 40 deg tilt floor
+
+User-directed refinement ahead of production:
+
+- **Mode swap removed from the dive.** `transitionTarget` is retired and
+  `startTransition(toBoom)` is now `startDive()`. The dive returns to the
+  view it began in; `uColorTransition` / `uCoreMode` are owned solely by
+  the Normal/Boom buttons.
+- **Timeline 8.2 s -> 6.0 s.** PULSE 1000 unchanged, zoom `duration`
+  5000 -> 4000 (zoom ends at 5.0 s from the tap), HOLD 700 -> 1000 (core
+  beat holds to 6.0 s). The 1500 ms fade-back phase is DELETED.
+- **Tilt floor is now an absolute 40 deg** off top-down (was 60% of the
+  slider, ~43.3 deg at the 1.26 default), clamped to the slider so a
+  resting tilt already below 40 deg is never tilted UP by the dive.
+
+Consequence, accepted by design: with no fade there is no black to hide
+the reset, so zoom (0.0001 -> 1.0) and tilt (40 deg -> 72.2 deg) snap home
+in a single visible frame. Fine when the dive navigates away; needs an
+app-level cover otherwise.
+
+`uFade` is now never driven by the editor's dive (constant 1.0). The
+uniform stays in the shader and the index table for host use -- do NOT
+remove it, the float layout is fixed.
+
+Recorder clip length follows: DIVE 8200 -> 6000 (total clip 7.8 s).
+
+Verified in headless Chromium: dive measured 6095 ms on the page's own
+clock (6000 + one software frame); mode and button label unchanged across
+a dive; no console errors. FLUTTER_IMPLEMENTATION.md section 5 (phase
+diagram + Dart driver), section 6 (tilt), the uFade row and the mode
+cheat-sheet all updated to match.
