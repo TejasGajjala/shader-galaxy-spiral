@@ -54,7 +54,7 @@ reorder declarations there without rebuilding this table.
 | 21 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
 | 22 | `uFlare` | 1.0 | star diffraction flares, final dive stretch |
 | 23 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 24 | `uGasClouds` | 0.43 | drifting gas-cloud layer between windings |
+| 24 | `uGasClouds` | 0.30 | drifting gas-cloud layer between windings |
 | 25 | `uOvalness` | 1.09 |  |
 | 26 | `uCamTilt` | 1.26 | radians off top-down; dive-animated — §6 |
 | 27 | `uCompactness` | 1.88 |  |
