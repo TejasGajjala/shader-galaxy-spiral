@@ -227,8 +227,13 @@ float starFlare(vec2 d, float dist, float radius, float reach, float hs, float a
     vec2 du = rotate(d, -ang);       // screen-aligned, not galaxy-aligned
     du.y *= cos(uCamTilt);           // approximate tilt foreshortening
     float thin = radius * 0.22;
-    float sx = exp(-abs(du.y) / thin) * pow(max(0.0, 1.0 - abs(du.x) / reach), 2.0);
-    float sy = exp(-abs(du.x) / thin) * pow(max(0.0, 1.0 - abs(du.y) / reach), 2.0);
+    // x*x rather than pow(x, 2.0): pow is an exp2/log2 pair on most GPUs
+    // and mobile compilers do not reliably fold a constant exponent.
+    // Mathematically exact, so the image cannot shift.
+    float tx = max(0.0, 1.0 - abs(du.x) / reach);
+    float ty = max(0.0, 1.0 - abs(du.y) / reach);
+    float sx = exp(-abs(du.y) / thin) * (tx * tx);
+    float sy = exp(-abs(du.x) / thin) * (ty * ty);
     // Tight halo: at 2R the glow is already down to ~13%. A wider sigma
     // barely decays inside the reach circle and smears every flared star
     // into a fog blob -- the spikes, not the bloom, carry the look.
@@ -519,7 +524,9 @@ float fbmdust(vec2 p) {
         r += 1.0/max(abs(noise(p*f)), 0.0001)/f;
         f += 1.0;
     }
-    return pow(clamp(1.0 - 1.0/max(r, 0.0001), 0.0, 1.0), 4.0);
+    float q  = clamp(1.0 - 1.0/max(r, 0.0001), 0.0, 1.0);
+    float q2 = q * q;
+    return q2 * q2;
 }
 
 float theta(float r, float wb, float wn){
@@ -1031,6 +1038,22 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // slice boundaries -- no gap, no overlap.
         float residArm   = hDisk * invN;
         float residBulge = hBulge * invN;
+        // Arm envelope, computed ONCE at the mid-plane and shared by every
+        // sheet. Each sheet used to rebuild the whole thing at its own
+        // footprint -- armAngleMask (with its wobble noise tap),
+        // armRadialFade, armDissolve, armStarKeep and two rotates -- but
+        // the sheets are only ~1.7% of the disk radius apart at the 1.35
+        // default, far finer than anything the envelope varies over, so
+        // the per-sheet copies were near-identical. The 3D still comes
+        // from each sheet's own LATTICE frame (aRot below), which stays
+        // distinct; only the brightness envelope is shared. pOval is
+        // already the mid-plane oval frame, so this reuses it outright.
+        float rMOv = length(pOval);
+        float mAng = armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval);
+        float mFade = armRadialFade(rMOv);
+        float armMask = mix(mAng * mAng * mAng,
+                            (mFade * mFade * mFade) * 0.55, armDissolve(rMOv));
+        float armKeep = armStarKeep(rMOv);
         starsV = 0.0;
         for (int s = 0; s < 8; s++) {
             if (s >= nSheet) break;
@@ -1041,24 +1064,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             float hi  = lo + invN;
             // Arm sheet: footprint built in the unrotated frame (pBg) so
             // the oval warp stays screen-aligned, then rotated like p.
-            vec2 aU = pBg - parVec * (t * hDisk);
-            vec2 aOval = rotate(vec2(aU.x / ovA, aU.y * ovA), ang);
-            vec2 aRot = rotate(aU, ang);
-            float rAOv = length(aOval);
-            // Arm dissolution (uArmSpread via armDissolve): blend the
-            // cubed mask toward the bare annulus weight -- outer stars
-            // scatter anywhere on the ring instead of hugging the ridge.
-            // (uArmFalloff is the separate presence thinning.)
-            float aMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, aOval), 3.0),
-                              pow(armRadialFade(rAOv), 3.0) * 0.55, armDissolve(rAOv));
-            // Skip the lattice wherever the mask/falloff already caps the
-            // contribution below the 1/255 dither floor -- most of the
-            // frame. Radially/arm-shaped regions, so the branch stays
-            // spatially coherent.
-            if (aMask > 0.0005) {
+            // Only the LATTICE frame is per-sheet; the arm envelope
+            // (aMask, armStarKeep) is shared -- see armMask/armKeep above.
+            vec2 aRot = rotate(pBg - parVec * (t * hDisk), ang);
+            if (armMask > 0.0005) {
                 // wantAll = 1 with the arm-thinning roll on .x: at
                 // armStarKeep = 1 this is the exact old keep=1 field.
-                starsV = max(starsV, aMask * starField(aRot, 0.0, parRot, lo, hi, ang, pxCtl, 1.0, armStarKeep(length(aOval)), residArm).x * 1.5);
+                starsV = max(starsV, armMask * starField(aRot, 0.0, parRot, lo, hi, ang, pxCtl, 1.0, armKeep, residArm).x * 1.5);
             }
             // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
             // footprint -- near-flat over the core, collapsing hard with
@@ -1085,8 +1097,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // mask toward the bare annulus weight -- outer stars scatter
         // anywhere on the ring instead of hugging the ridge ("loosened
         // gravitational pull"). (uArmFalloff is the presence thinning.)
-        float starMask = mix(pow(armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval), 3.0),
-                             pow(armRadialFade(rOv), 3.0) * 0.55, armDissolve(rOv));
+        float sAng = armAngleMask(uArmCount, 6.0, 0.7, uArmWinding, pOval);
+        float sFade = armRadialFade(rOv);
+        float starMask = mix(sAng * sAng * sAng,
+                             (sFade * sFade * sFade) * 0.55, armDissolve(rOv));
         // Gaussian PRESENCE falloff for the bulge/disk population,
         // CONCENTRATED at the center (reference: the core cluster is as
         // packed as the arm roots, and the between-arm sprinkle dies off
@@ -1159,7 +1173,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float edgeOut = mix(1.60, 1.15, uCoreMode);
     float coreMask = 1.0 - smoothstep(uBlackHoleSize*edgeIn, uBlackHoleSize*edgeOut, rCore);
     vec3 coreCol = mix(vec3(0.0), vec3(1.05, 1.05, 1.12), uCoreMode);
-    float rim = exp(-pow((rCore - uBlackHoleSize*1.25)/(uBlackHoleSize*0.5), 2.0));
+    float rimZ = (rCore - uBlackHoleSize*1.25) / (uBlackHoleSize*0.5);
+    float rim = exp(-rimZ * rimZ);
     // rim glow only for the white core (its halo); zero in black-hole mode
     float rimAmt = uCoreMode * 0.30;
     // extra bloom around the white core so it reads as glowing, not flat

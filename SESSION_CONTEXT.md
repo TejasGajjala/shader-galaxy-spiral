@@ -1101,3 +1101,32 @@ it; the user wanted it back. Restored from the archive intact -- CSS,
 button, overlay, the fs-idle selector, and the re-render-at-4096 handler.
 Verified: clicking it produces a data:image/png, opens the overlay, and
 restores the canvas to 392x840.
+
+## Item 74: Sheet-loop optimisations 1-3 (safe set)
+
+1. **Redundant sqrt.** `rAOv` already held `length(aOval)`, but the
+   armStarKeep argument recomputed `length(aOval)`. One sqrt per sheet per
+   pixel. Bit-identical.
+2. **Integer-exponent pow -> multiplies.** Six sites (starFlare x2, the
+   pow^4 radial fade, the sheet-loop and flat-path cubes, the core rim).
+   `pow` is an exp2/log2 pair on most GPUs and mobile compilers do not
+   reliably fold a constant exponent. Mathematically exact.
+3. **Shared arm envelope.** Every sheet rebuilt armAngleMask (with its
+   wobble noise tap), armRadialFade, armDissolve, armStarKeep and two
+   rotates at its own footprint. Sheets sit ~1.7% of the disk radius apart
+   at 1.35 -- far finer than anything the envelope varies over -- so the
+   copies were near-identical. Now computed once at the mid-plane, reusing
+   the existing `pOval` frame. Each sheet keeps its OWN lattice frame
+   (aRot), so the 3D placement is untouched; only the brightness envelope
+   is shared.
+
+Measured (3 runs each): 396.1 ms [401,381,406] -> 367.1 ms [353,382,367],
+about 7% off the rest frame. Canvas captures before/after are
+indistinguishable.
+
+Applied to all four files; sheet-loop bodies re-verified byte-identical
+across galaxy.frag, the .glsl and both editors.
+
+Note item 4 from the option list (cap the bulge at 2 sheets) is a no-op at
+the 1.35 default, which already runs 2, and is SUPERSEDED by item 5 if
+that lands -- merging puts the bulge in the arm loop.
