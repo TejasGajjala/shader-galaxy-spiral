@@ -985,3 +985,19 @@ values), sliders followed, block re-emitted the new values.
 Rule going forward: any tuning value a user can change MUST appear in the
 values block. "It's host-side" is not a reason to hide it -- the block is
 a settings handover, not a uniform dump.
+
+## Item 69: Linear dive tilt -- TRIED AND REVERTED
+
+Made the tilt descent linear in dp = 1 - zoom instead of easeInExpo, so
+it started with the zoom rather than landing all at once late. Measured
+at the default 72.2 deg tilt: zoom 0.76 gave 64.8 deg (was 72.0), zoom
+0.47 gave 54.3 (was 71.0), both ending at exactly 40.0.
+
+User reverted it on sight. The easeInExpo is back and is the intended
+behaviour: holding the resting tilt through the early and mid dive, then
+committing the whole lean-in during the plunge, is what the dive is
+supposed to feel like. Spreading the descent evenly flattens the shot too
+early and drains the plunge of its moment.
+
+Do not "fix" the exponential tilt curve again. If a middle ground is ever
+wanted, dp^2 is the knob -- but the default stays exponential.
