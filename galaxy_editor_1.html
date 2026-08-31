@@ -1491,13 +1491,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     armCount: 2, armWinding: 19.5, armSpacing: 1.03, armFalloff: 0.70, armSpread: 0.69, armEdgeSkew: 1.0, rimCoarse: 0.22, armWobble: 0.19,
     armSmoke: 0.80, smokeSkew: 0.62, coreGlow: 1.0, coreGlowSpread: 0.75, corona: 0.82, gasClouds: 0.30, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 1.0, ovalness: 1.09, camTilt: 1.26, rotSpeed: 0.036,
     compactness: 1.88, starDensity: 3.68, maxStarLod: 2.0, twinkleFraction: 0.0, twinkleSpeed: 0.0,
-    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.33, zoomEase: 0.75,
+    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.33, zoomEase: 0.75, diveSpin: 55,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
     star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
+  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase','diveSpin'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -1535,7 +1535,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Dive-animation param (JS choreography, NOT a shader uniform, so it
     // doesn't appear in the Copy-GLSL block): 0 = linear zoom, 1 = full
     // ease-in-out. 0.75 = slow start, fast middle, slow finale.
-    { key: 'zoomEase',        label: 'Zoom ease (dive)',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) }
+    { key: 'zoomEase',        label: 'Zoom ease (dive)',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    // Peak rotation multiplier at the core. The dive always starts at 5x
+    // and rides depth^3 up to THIS at the floor. 20 reproduces the old
+    // fixed 5*(1+3*depth^3) exactly; ~55 is where tangential motion
+    // roughly matches the radial rush through zoom 0.25-0.05, the band
+    // that used to read as stationary. Choreography, so JS-only like
+    // zoomEase, and excluded from Randomise by being absent from
+    // RANDOM_RANGES.
+    { key: 'diveSpin',        label: 'Dive spin peak',     min: 5,    max: 120,  step: 5,     fmt: v => v.toFixed(0) + '\u00d7' }
   ];
   // One set of four pickers, bound to whichever mode is active: in normal
   // mode they edit the normal* palette, in boom mode the boom palette. Both
@@ -2422,7 +2430,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // the spin angle, so accelerating it is safe (twinkle has its own
         // wall clock).
         const depth = 1.0 - currentZoom;
-        shaderTime += delta * 5.0 * (1.0 + 3.0 * depth * depth * depth);
+        // 5x at dive start, riding depth^3 to state.diveSpin at the core.
+        // The cube keeps the speed-up back-loaded into the plunge, which
+        // is where rotation was being swamped: through zoom 0.25-0.05 the
+        // picture magnifies ~1.7x/second in log terms, so ~95 deg/s is
+        // needed for a star to trace a visible curve rather than a ray,
+        // and the old 20x ceiling delivered only ~20 deg/s. diveSpin = 20
+        // restores the previous behaviour exactly.
+        shaderTime += delta * (5.0 + (state.diveSpin - 5.0) * depth * depth * depth);
         const t = elapsed - PULSE;
         // Ease-in-out zoom: blend the smoothstep S-curve into linear
         // progress (see ZOOM_EASE). Endpoints are preserved exactly, so

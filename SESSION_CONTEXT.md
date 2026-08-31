@@ -922,3 +922,37 @@ depth^3 ramp accelerates the stretch that already works and does nothing
 for the stretch that fails. Live options are the ones acting on the LATE
 dive: cut the zoom depth (which also fixes the reported stutter), or
 extend/raise the clock ramp late rather than early. Nothing implemented.
+
+## Item 67: Dive spin peak slider (diveSpin)
+
+The simple lever, per the user: make the rotation faster as it zooms in so
+it stops reading as stationary. The depth^3 ramp shape was already right
+(back-loaded into the plunge); only the CEILING was too low.
+
+  shaderTime += delta * (5.0 + (diveSpin - 5.0) * depth^3)
+
+Always 5x at dive start, riding depth^3 to `diveSpin` at the core.
+diveSpin = 20 reproduces the old fixed 5*(1+3*depth^3) EXACTLY. Default
+now 55. JS-only choreography like zoomEase; excluded from Randomise by
+being absent from RANDOM_RANGES.
+
+Measured (SwiftShader, rotation from the iTime trace):
+  diveSpin  20x -> total  42 deg,  band z0.25-0.05 unsampled (~20 deg/s)
+  diveSpin  55x -> total  70 deg,  band z0.25-0.05 ~29-36 deg/s
+  diveSpin 120x -> total  74 deg,  band z0.25-0.05 ~39 deg/s
+
+TWO findings:
+
+1. These numbers UNDER-report a real device. SwiftShader fits only ~6
+   frames in the whole dive, and `depth` is read from the PREVIOUS frame's
+   currentZoom -- at 900 ms frames that lag is enormous, so the multiplier
+   in use is far below the one the depth curve implies. At 60 fps the lag
+   is negligible; expect roughly double these rates (theory for the
+   0.25-0.05 band at 55x is ~74 deg/s vs the ~95 deg/s needed to match the
+   radial rush).
+
+2. DIMINISHING RETURNS past ~55-60. Going 55 -> 120 moved the total only
+   70 -> 74 deg, because depth^3 concentrates the entire boost into the
+   final instant, where almost no time is spent. If the MID dive needs
+   more rotation, the lever is the EXPONENT (depth^3 -> depth^2), not the
+   ceiling. Not changed -- flagged for the user to judge visually first.
