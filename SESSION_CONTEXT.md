@@ -868,3 +868,38 @@ Gating status of the two sliders asked about:
 
 Lesson for any future audit here: 3+ repeats per config, and treat
 anything under ~40 ms on this rig as unresolved.
+
+## Item 65: DEFINITIVE load table (3 interleaved rounds, ranges attached)
+
+Supersedes items 61/63/64. Rest frame at production defaults, SwiftShader
+392x840; base 383.1 ms [378-391]. A marginal is quoted ONLY where the
+min-max ranges do not overlap; everything else is "unresolved (below
+noise)". Ratios transfer, absolute ms do not.
+
+Where the rest frame goes:
+  baseline (ray + flat lattice + masks + dither)  166 ms   43%   [floor]
+  thick-path total (flat vs base)                 195 ms   51%   SOLID
+    - sheet machinery existing at all (T=0.05)    118 ms   31%   SOLID
+    - 3rd sheet at the 1.35 default               61 ms    16%   SOLID
+    - height math at 2 sheets                     15 ms     4%   real, small
+    - bulge sheet share                           <=20 ms        UNRESOLVED
+  smoke stack (armSmoke+coreGlow gate)            21 ms   5.5%   real
+  gas clouds                                      ~0             unmeasurable
+  corona / arm wobble / twinkle / star density    ~0             unmeasurable
+
+Sum check: 166 + 195 + 21 + ~11 = ~393 vs base 383 -- consistent within
+the noise band.
+
+Dive, ms/frame by zoom band (4 runs; multiplier vs rest):
+  pulse (z=1)        354   0.92x
+  zoom 1-0.5         509   1.33x
+  zoom 0.5-0.25      681   1.78x
+  zoom 0.25-0.05     894   2.33x  <- peak
+  z<0.05 + hold      299   0.78x
+
+Corrections this table locks in: audit-2's "machinery 121/30%" holds
+(118 here), but its bulge 30 / smoke 34 shrink to <=20 (unresolved) and
+21; audit-2's wobble/corona/gas entries were noise (item 64). The only
+optimization targets with real money are the sheet machinery, the sheet
+count, and (during the dive) the z 0.5-0.05 stretch; plus resolution,
+which multiplies everything.
