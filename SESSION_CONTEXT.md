@@ -1130,3 +1130,22 @@ across galaxy.frag, the .glsl and both editors.
 Note item 4 from the option list (cap the bulge at 2 sheets) is a no-op at
 the 1.35 default, which already runs 2, and is SUPERSEDED by item 5 if
 that lands -- merging puts the bulge in the arm loop.
+
+## Item 75 addendum: the arm+bulge merge was REVERTED
+
+The user looked again and could see the change, so the merge is out
+(reverted in the commit after 54d3d23). The bulge is back on its own
+footprint at hBulge = 3x hDisk with its own lattice walk and residBulge.
+
+Cost of keeping the look: 287 -> 374 ms. Net position after item 74 alone
+is 396 -> 374 ms, about 6%.
+
+RULE: the bulge's extra height is load-bearing. It is what puts diffuse
+scatter OFF the disk plane around the core, and collapsing it into the arm
+slab is visible even though it survived a first glance. Do not merge the
+two lattice walks. Any future attempt to halve the sheet loop has to keep
+the two populations at different heights.
+
+The item-74 optimisations (redundant sqrt, integer pow, shared arm
+envelope) are unaffected and remain in place -- verified present after the
+revert, and the core crop matches the pre-merge reference.
