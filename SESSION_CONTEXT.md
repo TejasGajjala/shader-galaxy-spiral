@@ -1216,3 +1216,42 @@ wins found this session both turned out to be paying for appearance (item
 75: bulge height; item 76: per-sheet arm envelope). What remains is
 host-side and known-large: render resolution (scales everything) and
 30 fps pacing at rest.
+
+## Item 78: What the "43% floor" actually is -- ABLATION, corrects item 65
+
+Item 65 lumped 166 ms into "baseline (ray + flat lattice + masks + dither)"
+and called it the floor without decomposing it. Measured properly by
+stubbing pieces out (scratch builds, floor config: T=0, bulge=0, smoke=0,
+gas=0):
+
+  v0 floor (all four off)          170.2 ms  [169,171]
+  v1 + starField stubbed            68.3 ms  [68,68]
+  v2 + arm masks stubbed (stars on) 169.1 ms  [171,167]
+  v3 + both stubbed                 69.0 ms  [70,69]
+
+  => STAR LATTICE      = 170.2 - 68.3 = ~102 ms, 60% OF THE FLOOR
+  => ARM MASKS         = 170.2 - 169.1 = ~1 ms, NOTHING
+  => everything else   = ~68 ms (camera/ray, core, dither, composition,
+                         background) -- 40% of the floor, 17% of the
+                         production frame
+
+Scaled to the 396 ms production frame, the honest split is:
+
+  star lattice, all forms (flat walk + sheet walks)   ~300 ms   ~76%
+  smoke stack                                          ~21 ms    ~5%
+  camera/ray + masks + core + gas + dither + colour    ~68 ms   ~17%
+
+So this shader is a STAR-LATTICE shader with some trimmings. The "43%
+floor" framing was misleading: 60% of that floor was itself star lattice.
+
+This also retroactively condemns item 76 (the shared arm envelope): the
+masks it hoisted cost ~1 ms, so that change broke arm thickness in
+exchange for nothing measurable. I should have ablated before optimising.
+
+REMAINING LEVER, and now clearly the only one worth trying in-shader:
+the per-cell early reject. Each of the 9 cells currently computes a hash,
+sizeMul, starBase, radius and atten (two divides) BEFORE testing whether
+the star is anywhere near the pixel. Reordering to reject on distance
+first is exact -- no geometry, no random values change -- and it targets
+the 76%, not the 17%. Deferred earlier as "speculative"; the ablation says
+otherwise.
