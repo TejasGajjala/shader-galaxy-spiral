@@ -1036,3 +1036,29 @@ between updateCoreBtnLook() and buildColorControls(), and structEl /
 colorEl were declared next to glslOut -- both were collateral and were
 restored from the archive. A declared-vs-referenced diff against the
 archive is the way to catch that class of mistake.
+
+## Item 71: Values block restored to the normal-only build; snapshot removed
+
+Item 70 over-trimmed. The GLSL values block is a working tool, not
+two-mode baggage -- restored, scoped to the normal set:
+
+- glslText() emits 32 values: the structure uniforms, the single
+  (uNormal*) palette, uCenterSpread, and the two host-side choreography
+  constants under their own header. Boom palette, uColorTransition,
+  uCorona and uCoreMode are gone from the block, as they are from this
+  build. Host-driven uniforms still emit as comments.
+- applyGlslText + UNIFORM_TO_KEY + VEC_UNIFORM_TO_KEY + STRUCT_BY_KEY
+  restored, with the boom vec3 entries and uCorona dropped.
+- Copy / Apply buttons, the textarea and its hint, the Ctrl/Cmd+Enter
+  shortcut, the sync() refresh and the reset-discards-edits behaviour all
+  back.
+- uNormal* prefixes KEPT even though there is only one palette now, so
+  this file stays diff-able against galaxy_editor_full.html and the
+  production shader.
+
+Snapshot removed at the same time (button, overlay, CSS, the
+re-render-at-4096 handler): fullscreen plus an OS screen grab covers it.
+
+Verified: 49-line block, no boom identifiers present, round-trip edits
+(uDiskThickness 2.50, uNormalArmColor vec3(0.2,0.9,0.4)) apply 32 values
+and re-emit correctly, no console errors.

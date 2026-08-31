@@ -89,7 +89,6 @@
      drives #boom-btn's opacity through an inline style, which would
      otherwise outrank these. */
   #phone.fs-idle #fs-btn,
-  #phone.fs-idle #snap-btn,
   #phone.fs-idle #boom-btn,
   #phone.fs-idle #pause-btn,
   #phone.fs-idle #pause-btn {
@@ -97,35 +96,6 @@
   }
   #phone #boom-btn, #phone #pause-btn {
     transition: opacity 0.35s ease;
-  }
-
-  #snap-btn {
-    position: absolute; top: 14px; right: 14px; z-index: 5;
-    width: 38px; height: 38px; border-radius: 50%; border: none;
-    cursor: pointer; padding: 0;
-    display: flex; align-items: center; justify-content: center;
-    background: rgba(20, 22, 40, 0.55); color: rgba(255, 255, 255, 0.8);
-  }
-  #snap-btn:hover { background: rgba(124, 106, 247, 0.55); color: #fff; }
-  #snap-btn svg { width: 20px; height: 20px; }
-  /* Snapshot overlay: the sandboxed artifact webview blocks anchor
-     downloads, so the high-res render is shown in-page instead and saved
-     via the browser's own "Save image as..." (needs no permission). */
-  #snap-overlay {
-    position: fixed; inset: 0; z-index: 50; display: none;
-    background: rgba(5, 6, 12, 0.92);
-    align-items: center; justify-content: center; flex-direction: column;
-    gap: 12px; padding: 24px;
-  }
-  #snap-overlay.open { display: flex; }
-  #snap-overlay img {
-    max-width: 92vw; max-height: 82vh; border-radius: 8px;
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8);
-  }
-  #snap-overlay .snap-hint { font-size: 13px; color: rgba(255,255,255,0.75); text-align: center; }
-  #snap-overlay .snap-close {
-    border: none; border-radius: 8px; padding: 8px 18px; cursor: pointer;
-    background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9);
   }
 
   #pause-btn {
@@ -138,6 +108,9 @@
   #pause-btn:hover { background: #34344a; }
   #pause-btn:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
 
+  #glsl-out { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; background: #181826; border-radius: 8px; border: 0.5px solid rgba(255,255,255,0.2); font-family: monospace; font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.85); white-space: pre; resize: vertical; box-sizing: border-box; height: 220px; }
+  #glsl-out:focus { outline: none; border-color: #7c6af7; }
+  #glsl-hint { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
   #panel { width: 100%; max-width: 560px; margin-top: 20px; flex: 1 1 420px; min-width: 0; }
   @media (min-width: 901px) { #panel { margin-top: 0; } }
   .section-title { font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
@@ -168,17 +141,8 @@
   <button id="fs-btn" title="Fullscreen (Esc to exit)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
   </button>
-  <button id="snap-btn" title="Save high-res snapshot (PNG)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
-  </button>
   <button id="boom-btn">Dive</button>
   <button id="pause-btn">Pause</button>
-  <div id="snap-overlay">
-    <img alt="High-res galaxy snapshot" />
-    <div class="snap-hint">Right-click (desktop) or long-press (mobile) the image and choose
-      "Save image as..." &mdash; the sandboxed webview blocks direct downloads.</div>
-    <button class="snap-close">Close</button>
-  </div>
 </div>
 
 <div id="panel">
@@ -189,8 +153,12 @@
   <div id="actions">
     <button id="reset-btn">Reset to defaults</button>
     <button id="random-btn">Randomise</button>
+    <button id="copy-btn">Copy GLSL values</button>
+    <button id="apply-btn">Apply edited values</button>
     <span id="copy-status" style="font-size:12px;color:rgba(255,255,255,0.5);"></span>
   </div>
+  <textarea id="glsl-out" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  <div id="glsl-hint">Edit or paste values above, then click "Apply edited values" (or press Ctrl/Cmd+Enter while focused) to update the sliders and render.</div>
 </div>
 </div>
 
@@ -1431,6 +1399,62 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // block) back to state keys, so the textarea can be edited or pasted
   // into and applied. Scalars are clamped to the same min/max as their
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
+  const UNIFORM_TO_KEY = {
+    // Not shader uniforms -- host-side dive choreography. Listed here so
+    // the values block emits and re-parses them like everything else;
+    // sync() uploads by explicit call, so nothing tries to bind them.
+    uZoomEase: 'zoomEase', uDiveSpin: 'diveSpin',
+    uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing', uArmFalloff: 'armFalloff', uArmSpread: 'armSpread', uArmEdgeSkew: 'armEdgeSkew',
+    uRimCoarse: 'rimCoarse', uArmWobble: 'armWobble',
+    uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread',
+    uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
+    uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
+    uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
+    uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
+    uBlackHoleSize: 'blackHoleSize', uCenterSpread: 'centerSpread'
+  };
+  // Normal-only build: the boom palette (uCenterColor/uArmColor/
+  // uOuterHazeColor/uStarColor) is gone, so the uNormal* set is the only
+  // palette. Names keep the prefix to stay diff-able against
+  // galaxy_editor_full.html and the production shader.
+  const VEC_UNIFORM_TO_KEY = {
+    uNormalCenterColor: 'normalCenter', uNormalArmColor: 'normalArm',
+    uNormalHazeColor: 'normalHaze', uNormalStarColor: 'normalStar'
+  };
+  const STRUCT_BY_KEY = {};
+  STRUCT.forEach(c => { STRUCT_BY_KEY[c.key] = c; });
+
+  // Parses "uName = value;" / "uName = vec3(r,g,b);" lines in any order;
+  // anything unrecognised (including the commented host-driven block) is
+  // ignored, so the emitted text round-trips.
+  function applyGlslText(text) {
+    let count = 0;
+    const errors = [];
+    const scalarRe = /\b(u[A-Za-z]+)\s*=\s*([^;]+);/g;
+    let m;
+    while ((m = scalarRe.exec(text)) !== null) {
+      const name = m[1];
+      const raw = m[2].trim();
+      if (VEC_UNIFORM_TO_KEY[name]) {
+        const vm = raw.match(/vec3\s*\(\s*([^,]+),\s*([^,]+),\s*([^)]+)\)/);
+        if (!vm) { errors.push(name); continue; }
+        const rgb = [parseFloat(vm[1]), parseFloat(vm[2]), parseFloat(vm[3])];
+        if (rgb.some(v => !isFinite(v))) { errors.push(name); continue; }
+        state[VEC_UNIFORM_TO_KEY[name]] = rgb.map(v => Math.min(1, Math.max(0, v)));
+        count++;
+      } else if (UNIFORM_TO_KEY[name]) {
+        const key = UNIFORM_TO_KEY[name];
+        const v = parseFloat(raw);
+        if (!isFinite(v)) { errors.push(name); continue; }
+        const range = STRUCT_BY_KEY[key];
+        state[key] = range ? Math.min(range.max, Math.max(range.min, v)) : v;
+        count++;
+      }
+    }
+    return { count, errors };
+  }
+
+  const glslOut = document.getElementById('glsl-out');
   const structEl = document.getElementById('struct-controls');
   const colorEl = document.getElementById('color-controls');
 
@@ -1475,6 +1499,74 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   }
 
   function fmtVec(rgb){ return 'vec3(' + rgb.map(v => v.toFixed(3)).join(', ') + ')'; }
+  function glslText() {
+    return [
+      'uArmCount        = ' + state.armCount.toFixed(0) + ';',
+      'uArmWinding      = ' + state.armWinding.toFixed(1) + ';',
+      'uArmSpacing      = ' + state.armSpacing.toFixed(2) + ';',
+      'uArmFalloff      = ' + state.armFalloff.toFixed(2) + ';',
+      'uArmSpread       = ' + state.armSpread.toFixed(2) + ';',
+      'uArmEdgeSkew     = ' + state.armEdgeSkew.toFixed(2) + ';',
+      'uRimCoarse       = ' + state.rimCoarse.toFixed(2) + ';',
+      'uArmWobble       = ' + state.armWobble.toFixed(2) + ';',
+      'uArmSmoke        = ' + state.armSmoke.toFixed(2) + ';',
+      'uSmokeSkew       = ' + state.smokeSkew.toFixed(2) + ';',
+      'uCoreGlow        = ' + state.coreGlow.toFixed(2) + ';',
+      'uCoreGlowSpread  = ' + state.coreGlowSpread.toFixed(2) + ';',
+      'uGasClouds       = ' + state.gasClouds.toFixed(2) + ';',
+      'uBulge           = ' + state.bulgeAmount.toFixed(2) + ';',
+      'uDiskThickness   = ' + state.diskThickness.toFixed(2) + ';',
+      'uFlare           = ' + state.starFlare.toFixed(2) + ';',
+      'uOvalness        = ' + state.ovalness.toFixed(2) + ';',
+      'uCamTilt         = ' + state.camTilt.toFixed(2) + ';',
+      'uRotSpeed        = ' + state.rotSpeed.toFixed(3) + ';',
+      'uCompactness     = ' + state.compactness.toFixed(2) + ';',
+      'uStarDensity     = ' + state.starDensity.toFixed(2) + ';',
+      'uMaxStarLod      = ' + state.maxStarLod.toFixed(1) + ';',
+      'uTwinkleFraction = ' + state.twinkleFraction.toFixed(2) + ';',
+      'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
+      'uBlackHoleSize   = ' + state.blackHoleSize.toFixed(3) + ';',
+      // Normal-only build: this is the ONLY palette. The boom set and
+      // uColorTransition live in galaxy_editor_full.html.
+      '',
+      '// --- palette (the resting state) ---',
+      'uNormalCenterColor = ' + fmtVec(state.normalCenter) + ';',
+      'uNormalArmColor    = ' + fmtVec(state.normalArm) + ';',
+      'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
+      'uNormalStarColor   = ' + fmtVec(state.normalStar) + ';',
+      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';',
+      // Dive choreography: shapes the dive but is NOT a shader uniform --
+      // the host owns these (Dart: _zoomEase / _diveSpin). The u-prefix is
+      // only there because the parser keys on it, hence the header.
+      '',
+      '// --- dive choreography: HOST-SIDE constants, NOT shader uniforms ---',
+      'uZoomEase        = ' + state.zoomEase.toFixed(2) + ';',
+      'uDiveSpin        = ' + state.diveSpin.toFixed(0) + ';',
+      // Host-driven uniforms: the app animates these, so they are emitted
+      // as comments with their rest-state values. applyGlslText ignores
+      // them (not in UNIFORM_TO_KEY), so pasting the block back is safe.
+      '',
+      '// --- host-driven, not sliders. Rest-state values shown. ---',
+      '// iResolution      = canvas size in PHYSICAL pixels (size * dpr)',
+      '// iTime            = rotation clock, NOT wall time',
+      '// uZoom            = 1.0;   // 1 = rest, ->0 = dived',
+      '// uFade            = 1.0;   // 1 = visible, 0 = black',
+      '// uHazePulse       = 1.0;   // "come alive" beat, 1 = neutral',
+      // zoom is 1.0 at rest by definition -- do NOT read currentZoom here,
+      // it is declared after the first sync() call and would be in its
+      // temporal dead zone.
+      '// uPxSize          = ' + (3.3 * Math.max(1 / canvas.width,
+        1 / (canvas.height * Math.cos(state.camTilt)))).toFixed(5) +
+        ';  // 3.3*zoom*max(1/w, 1/(h*cos(tilt))) -- WORST axis, recompute on resize',
+      '//',
+      '// NORMAL-STATE BUILD. The production shader (galaxy.frag) still',
+      '// carries both modes -- port anything tuned here back to it.',
+      '// Authored against a ' + canvas.width + 'x' + canvas.height +
+        ' canvas (portrait ~9:19.5). The shader self-corrects for other',
+      '// aspects, so shape holds, but framing was judged at that ratio.'
+    ].join('\n');
+  }
+
   function sync() {
     gl.uniform1f(U.uArmCount, state.armCount);
     gl.uniform1f(U.uArmWinding, state.armWinding);
@@ -1511,12 +1603,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // one-off repaint so tweaking values against a frozen mid-dive frame
     // (the best way to A/B e.g. disk thickness) updates instantly.
     pausedDirty = true;
+    // Don't clobber the textarea while the user is actively editing it.
+    if (document.activeElement !== glslOut) glslOut.value = glslText();
   }
 
   document.getElementById('reset-btn').addEventListener('click', () => {
     COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
     KEYS.forEach(k => state[k] = DEFAULTS[k]);
     buildControls(); sync();
+    glslOut.blur(); // resetting is explicit intent to discard any pending edit
+    glslOut.value = glslText();
   });
   // ---- Randomise: one click = a fresh plausible galaxy. Ranges are
   // deliberately NARROWER than the sliders where the extremes stop
@@ -1577,6 +1673,32 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     buildControls(); sync();
   });
 
+  document.getElementById('copy-btn').addEventListener('click', async () => {
+    const status = document.getElementById('copy-status');
+    try { await navigator.clipboard.writeText(glslText()); status.textContent = 'Copied'; }
+    catch(e) { status.textContent = 'Select block below to copy'; }
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  });
+
+  function applyFromTextarea() {
+    const status = document.getElementById('copy-status');
+    const { count, errors } = applyGlslText(glslOut.value);
+    if (count === 0) {
+      status.textContent = 'No valid uName = value; lines found';
+    } else {
+      buildControls();
+      sync();
+      status.textContent = errors.length
+        ? 'Applied ' + count + ', skipped ' + errors.length + ' (' + errors.join(', ') + ')'
+        : 'Applied ' + count + ' value' + (count === 1 ? '' : 's');
+    }
+    setTimeout(() => { status.textContent = ''; }, 3500);
+  }
+  document.getElementById('apply-btn').addEventListener('click', applyFromTextarea);
+  glslOut.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyFromTextarea(); }
+  });
+
   // Backing-store budget. Fullscreen on a retina display would otherwise
   // ask for clientWidth * clientHeight * 4 -- a 1440p screen at dpr 2 is
   // ~14.7 Mpx, over 20x the phone frame's ~0.66 Mpx, which this shader
@@ -1598,47 +1720,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   }
   new ResizeObserver(resize).observe(canvas);
   resize();
-
-  // High-res snapshot: re-render ONE frame into an upscaled backing store
-  // (up to 4096 px on the long side), save it, and restore the live size
-  // within the same task. Reuses the existing context and whatever the
-  // uniforms currently hold, so it captures rest, paused, or mid-dive
-  // frames alike; iResolution and uPxSize are re-uploaded for the big
-  // frame so star anti-aliasing is computed FOR that pixel density (a
-  // plain canvas upscale would blur -- this is a true re-render).
-  // toDataURL is synchronous, so no preserveDrawingBuffer needed and the
-  // restore can't race the encode.
-  document.getElementById('snap-btn').addEventListener('click', () => {
-    const oldW = canvas.width, oldH = canvas.height;
-    const scale = Math.min(3, 4096 / Math.max(oldW, oldH));
-    const w = Math.round(oldW * scale), h = Math.round(oldH * scale);
-    canvas.width = w; canvas.height = h;
-    gl.viewport(0, 0, w, h);
-    gl.uniform2f(U.iResolution, w, h);
-    gl.uniform1f(U.uPxSize, 3.3 * currentZoom * Math.max(1 / w, 1 / (h * Math.cos(currentTilt))));
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    const url = canvas.toDataURL('image/png');
-    canvas.width = oldW; canvas.height = oldH;
-    gl.viewport(0, 0, oldW, oldH);
-    gl.uniform2f(U.iResolution, oldW, oldH);
-    pausedDirty = true; // repaint the frozen frame if paused
-    // Best-effort direct download -- works when the page runs standalone;
-    // the sandboxed artifact webview silently blocks it, so the overlay
-    // below is the path that always works (browser-native image save).
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'galaxy_' + w + 'x' + h + '_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
-    a.click();
-    const overlay = document.getElementById('snap-overlay');
-    overlay.querySelector('img').src = url;
-    overlay.classList.add('open');
-  });
-  (() => {
-    const overlay = document.getElementById('snap-overlay');
-    const close = () => { overlay.classList.remove('open'); overlay.querySelector('img').src = ''; };
-    overlay.querySelector('.snap-close').addEventListener('click', close);
-    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
-  })();
 
   // Fullscreen presentation. The phone frame is the authoring context, not
   // the deliverable -- for a screen recording it just bakes a bezel and a
