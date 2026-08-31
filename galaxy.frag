@@ -1,5 +1,6 @@
 // Flutter FragmentProgram port of the spiral-galaxy shader
-// (galaxy_shader_V1.3.glsl, exported from galaxy_editor_1.html).
+// Shader body is line-for-line identical to the one in
+// galaxy_editor.html, the browser tuning tool.
 // Arm/dust/disk math adapted from S.Guillitte's galaxy shader
 // (CC BY-NC-SA 3.0).
 //
@@ -18,7 +19,6 @@ uniform float uFade;
 uniform float uRotSpeed;
 
 // Sandbox controls
-uniform float uColorTransition;
 uniform float uArmCount;
 uniform float uArmWinding;
 uniform float uArmSpacing;      // radial spacing between arm turns without
@@ -80,7 +80,6 @@ uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
                                 // independent of its width). 1.0 = the
                                 // original shape, <1 hugs the core,
                                 // >1 extends outward.
-uniform float uCorona;          // tight bright bloom right at the core
 uniform float uBulge;           // stellar bulge strength; 0 = arms only
                                 // (clean starfield), 1 = full. Stars are
                                 // independent of this.
@@ -127,12 +126,7 @@ uniform float uTwinkleFraction; // 0..1: fraction of stars that twinkle
 uniform float uTwinkleSpeed;    // pulse rate, independent of rotation
 uniform float uTwinkleTime;     // wall-clock time (not the scaled iTime)
 uniform float uPxSize;          // p-space size of one screen pixel (anti-alias)
-uniform float uCoreMode; // 0.0 = black hole, 1.0 = bright white core
 uniform float uBlackHoleSize;
-uniform vec3 uCenterColor;
-uniform vec3 uArmColor;
-uniform vec3 uOuterHazeColor;   // nebula accents (corona + gas clouds)
-uniform vec3 uStarColor;
 // Normal mode's palette: same four roles as boom's, driving an exact
 // decomposition of the original grayscale formula -- with all four left at
 // the same neutral gray the output is bit-identical to the old single-tint
@@ -875,7 +869,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // bit. rim/coreGlow are added AFTER the mix and stay live. Uses the
     // same length(p) the CORE section feeds smoothstep, so the boundary
     // pixel lands identically. Spatially coherent branch (a disc).
-    bool inHole = length(p) <= uBlackHoleSize * mix(0.45, 0.85, uCoreMode);
+    bool inHole = length(p) <= uBlackHoleSize * 0.45;
 
     // Haze extinction during the deep dive: the smoke lingers around the
     // viewer well into the zoom (full until zoom 0.18) and only then
@@ -897,12 +891,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     bool bodyOn = hazeMod > 0.001 && !inHole && (uArmSmoke > 0.001 || uCoreGlow > 0.001);
     vec2 sm = bodyOn ? smokeMap(pOval, p) : vec2(0.0);
     float smoke = hazeMod * max(uArmSmoke * sm.x, uCoreGlow * sm.y);
-    // Corona: tight central bloom, its own slider. BOOM MODE ONLY, as it
-    // always was -- the dive's visible zoom runs in normal colors (the
-    // palette swap hides behind the fade), and at deep zoom this exp
-    // covers most of the screen, so adding it to normal mode washes the
-    // whole finale in bloom. Cheap single exp, computed unconditionally.
-    float corona = uCorona * hazeMod * exp(-dot(pOval, pOval) * 25.0);
     // Gas clouds: a sparse second layer of soft fog banks floating OVER
     // the disk (reference video: gauze drifting through the dark winding
     // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
@@ -1129,23 +1117,14 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float rCore = length(p);    // true radius: the core itself stays round
 
     // --- COMPUTE BOOM MODE ---
-    // Dual-tone spiral: the inner region takes uCenterColor and blends into
-    // uArmColor with radius, so the spiral body itself is two-toned. The
-    // corona + gas clouds are the nebula accents tinted by uOuterHazeColor.
-    // (The old soft "secondary glow" b layer -- a second smokeMap sampled
-    // in a rotated frame -- was REMOVED at the user's call after A/B'ing
-    // it with its slider; that also dropped a full smoke pass per pixel.)
+    // SINGLE-MODE BUILD. The boom palette, uColorTransition, the corona
+    // and the white-core branch were removed at handoff: the product ships
+    // the resting spiral only. galaxy_editor_with_boom.html keeps the
+    // two-mode original if it is ever needed again.
     // Center tint fades out on a gaussian -- no visible edge, unlike a
     // smoothstep band which reads as a drawn circle. uCenterSpread sets
     // how far the tint reaches (weight = exp(-d^2/spread^2)).
     float centerW = exp(-(dist * dist) / (uCenterSpread * uCenterSpread));
-    vec3 spiralHue = mix(uArmColor, uCenterColor, centerW);
-    vec3 boomCol = spiralHue * (k * 0.8 + k * k * 0.2) +
-                   uStarColor * starsB;
-
-    vec3 boomLayer = clamp(boomCol, 0.0, 1.6);
-    boomLayer += corona * uOuterHazeColor;
-
     // --- COMPUTE NORMAL MODE ---
     // Exact decomposition of the original grayscale formula
     //   lum = (0.2*kA^2 + 0.7*kA) / 3,  kA = k + sV   (the 0.4*b glow term
@@ -1164,33 +1143,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the core mix so the hole / white core still punches through, and
     // additively over the body so stars shine through the banks.
     float gasG = gas * groundVis;
-    boomLayer   += uOuterHazeColor  * gasG;
     normalLayer += uNormalHazeColor * gasG * 0.85;
 
-    // --- CORE (both modes): uCoreMode 0 = black hole, 1 = bright white core
-    // Black hole has no rim glow and a wide soft edge, so surrounding haze
-    // and stars feather gently into the void; white core keeps a tight edge.
-    float edgeIn  = mix(0.45, 0.85, uCoreMode);
-    float edgeOut = mix(1.60, 1.15, uCoreMode);
-    float coreMask = 1.0 - smoothstep(uBlackHoleSize*edgeIn, uBlackHoleSize*edgeOut, rCore);
-    vec3 coreCol = mix(vec3(0.0), vec3(1.05, 1.05, 1.12), uCoreMode);
-    float rimZ = (rCore - uBlackHoleSize*1.25) / (uBlackHoleSize*0.5);
-    float rim = exp(-rimZ * rimZ);
-    // rim glow only for the white core (its halo); zero in black-hole mode
-    float rimAmt = uCoreMode * 0.30;
-    // extra bloom around the white core so it reads as glowing, not flat
-    float coreGlow = uCoreMode * exp(-dot(p,p) / (uBlackHoleSize*uBlackHoleSize) * 1.5) * 0.35;
+    // --- CORE: black hole only. No rim glow, and a wide soft edge, so
+    // surrounding haze and stars feather gently into the void. (The white
+    // core was uCoreMode = 1; with it gone, rim and coreGlow were both
+    // identically zero and are dropped outright.)
+    float coreMask = 1.0 - smoothstep(uBlackHoleSize*0.45, uBlackHoleSize*1.60, rCore);
+    normalLayer = mix(normalLayer, vec3(0.0), coreMask);
 
-    normalLayer = mix(normalLayer, coreCol, coreMask);
-    normalLayer += rim * rimAmt * uNormalStarColor;
-    normalLayer += coreGlow;
-
-    boomLayer = mix(boomLayer, coreCol, coreMask);
-    boomLayer += rim * rimAmt * vec3(0.9, 0.85, 1.0);
-    boomLayer += coreGlow;
-
-    // --- MIX MODES ---
-    vec3 finalCol = mix(normalLayer, boomLayer, uColorTransition);
+    vec3 finalCol = normalLayer;
 
     finalCol = pow(clamp(finalCol, 0.0, 1.0), vec3(0.9));
     finalCol *= uFade;

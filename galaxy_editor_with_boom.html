@@ -3,15 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Galaxy shader editor (full, two-mode)</title>
-<!-- ARCHIVE. The complete two-mode editor as of the production sign-off:
-     normal + boom palettes, mode toggles, core-style switch, the GLSL
-     values block, the HD recorder, Randomise. Parked here so iteration can
-     continue in galaxy_editor_1.html, which is trimmed to the NORMAL state
-     only. Nothing here is wired to that file -- if a change lands there and
-     needs to ship, port it to galaxy.frag / galaxy_shader_V1.3.glsl (which
-     remain the production truth and still carry both modes), and to this
-     archive if the two-mode build is ever revived. -->
+<title>Galaxy editor with boom</title>
+<!-- REFERENCE BUILD, NOT SHIPPED. The two-mode editor: normal + boom
+     palettes, the mode toggles, the core-style switch, the values block,
+     the HD dive recorder and Randomise.
+
+     The product ships the RESTING SPIRAL ONLY, so galaxy.frag and
+     galaxy_editor.html both carry a single mode and a 46-float uniform
+     set. This file is kept solely so the boom palette and the mode-swap
+     choreography are not lost, in case a coloured state is ever wanted
+     again. It is not maintained and not wired to anything -- treat it as
+     documentation of a road not taken. -->
 <style>
   * { box-sizing: border-box; }
   body {

@@ -1,10 +1,21 @@
 # Flutter implementation guide — spiral galaxy shader
 
-How to run `galaxy.frag` (the Flutter port of `galaxy_shader_V1.3.glsl`,
-itself exported verbatim from `galaxy_editor_1.html`) as a Flutter
-`FragmentProgram`, and how to drive the dive animation exactly like the
-editor does. The shader is a single pure fragment pass — no textures, no
-extra passes, no vertex work.
+How to run `galaxy.frag` as a Flutter `FragmentProgram`, and how to drive
+the dive exactly as the editor does. The shader is a single pure fragment
+pass — no textures, no extra passes, no vertex work.
+
+### What is in this repo
+
+| file | what it is |
+|---|---|
+| `galaxy.frag` | **The deliverable.** Ships in the app. |
+| `galaxy_editor.html` | **The tuning tool.** Open in any browser: sliders, palette, dive, and a values block you can copy or paste back. Its shader body is *line-for-line identical* to `galaxy.frag`, so anything tuned here transfers verbatim. |
+| `galaxy_editor_with_boom.html` | Reference only, not maintained. The earlier two-mode build (normal + a coloured "boom" state), kept so that palette and its mode-swap choreography are not lost. |
+| `FLUTTER_IMPLEMENTATION.md` | This file. |
+
+To change the look: open the editor, move sliders, press **Copy GLSL
+values**, and paste the block into the ticket. Every value in it maps to a
+row of the index table below. Nothing in the editor needs a build step.
 
 ## 1. Setup
 
@@ -34,49 +45,48 @@ reorder declarations there without rebuilding this table.
 | 0–1 | `iResolution` | canvas size | physical pixels (`size * dpr`) |
 | 2 | `iTime` | clock | rotation clock, **not** wall time — §4 |
 | 3 | `uZoom` | 1.0 | 1 = rest … →0 = dived |
-| 4 | `uFade` | 1.0 | 0 = black. The dive no longer drives it (no fade-back phase); host-only |
+| 4 | `uFade` | 1.0 | 0 = black. The dive does not drive it; host-only |
 | 5 | `uRotSpeed` | 0.036 | spin speed |
-| 6 | `uColorTransition` | 0.0 | 0 = normal palette, 1 = boom palette |
-| 7 | `uArmCount` | 2 |  |
-| 8 | `uArmWinding` | 19.5 |  |
-| 9 | `uArmSpacing` | 1.03 | where the turns sit; does not change their count |
-| 10 | `uArmFalloff` | 0.70 | arm stars: outward density thinning (stars only) |
-| 11 | `uArmSpread` | 0.69 | arm stars: outward band widening, plateau (stars only) |
-| 12 | `uArmEdgeSkew` | 1.0 | arm stars: hard inner edge / feathered outer (stars only) |
-| 13 | `uRimCoarse` | 0.22 | outermost star band: thins AND carries it further out (stars only) |
-| 14 | `uArmWobble` | 0.19 | static noise warp on the arm phase; windings wander, stars+smoke together |
-| 15 | `uArmSmoke` | 0.80 | haze: smoky filaments tracing the arms |
-| 16 | `uSmokeSkew` | 0.62 | edge skew for the SMOKE arms (no width plateau); 0 = symmetric |
-| 17 | `uCoreGlow` | 1.0 | haze: broad bright glow at the nucleus |
-| 18 | `uCoreGlowSpread` | 0.75 | core glow radial reach; intensity stays pinned |
-| 19 | `uCorona` | 0.82 | haze: tight core bloom (BOOM MODE only) |
-| 20 | `uBulge` | 1.5 | grows the radius of the packed central cluster |
-| 21 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick |
-| 22 | `uFlare` | 1.0 | star diffraction flares, final dive stretch |
-| 23 | `uHazePulse` | 1.0 | "come alive" beat, host-driven — §5 |
-| 24 | `uGasClouds` | 0.30 | drifting gas-cloud layer between windings |
-| 25 | `uOvalness` | 1.09 |  |
-| 26 | `uCamTilt` | 1.26 | radians off top-down; dive-animated — §6 |
-| 27 | `uCompactness` | 1.88 |  |
-| 28 | `uStarDensity` | 3.68 |  |
-| 29 | `uMaxStarLod` | 2.0 | star refill cap during the dive |
-| 30 | `uTwinkleFraction` | 0.00 |  |
-| 31 | `uTwinkleSpeed` | 0.0 | 0 = twinkle off (static per-star offsets) |
-| 32 | `uTwinkleTime` | clock | wall-clock seconds, always real-time |
-| 33 | `uPxSize` | computed | AA floor — §7 |
-| 34 | `uCoreMode` | 0 | 0 = black hole, 1 = white core |
-| 35 | `uBlackHoleSize` | 0.049 |  |
-| 36–38 | `uCenterColor` | 0.294, 0.376, 0.569 | boom palette |
-| 39–41 | `uArmColor` | 0.000, 0.482, 1.000 | boom |
-| 42–44 | `uOuterHazeColor` | 0.259, 0.345, 1.000 | boom |
-| 45–47 | `uStarColor` | 1.000, 1.000, 1.000 | boom |
-| 48–50 | `uNormalCenterColor` | 0.886, 0.878, 1.0 | normal palette |
-| 51–53 | `uNormalArmColor` | 0.639, 0.651, 1.0 | normal |
-| 54–56 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
-| 57–59 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
-| 60 | `uCenterSpread` | 0.33 |  |
+| 6 | `uArmCount` | 2 |  |
+| 7 | `uArmWinding` | 19.5 |  |
+| 8 | `uArmSpacing` | 1.03 | where the turns sit; does not change their count |
+| 9 | `uArmFalloff` | 0.70 | arm stars: outward density thinning (stars only) |
+| 10 | `uArmSpread` | 0.69 | arm stars: outward band widening, plateau (stars only) |
+| 11 | `uArmEdgeSkew` | 1.00 | hard inner edge / feathered outer edge (stars only) |
+| 12 | `uRimCoarse` | 0.22 | outermost star band: thins AND carries it further out (stars only) |
+| 13 | `uArmWobble` | 0.19 | static noise warp on the arm phase; stars + smoke together |
+| 14 | `uArmSmoke` | 0.80 | haze: smoky filaments tracing the arms |
+| 15 | `uSmokeSkew` | 0.62 | edge skew for the SMOKE arms |
+| 16 | `uCoreGlow` | 1.00 | haze: broad glow at the nucleus |
+| 17 | `uCoreGlowSpread` | 0.75 | core glow radial reach; intensity pinned |
+| 18 | `uBulge` | 1.50 | stellar bulge strength |
+| 19 | `uDiskThickness` | 1.35 | 0 = flat disk (cheapest path); default is thick — §11 |
+| 20 | `uFlare` | 1.00 | diffraction spikes; alive only in the dive’s final stretch |
+| 21 | `uHazePulse` | 1.0 | dive-start “come alive” beat, 1 = neutral |
+| 22 | `uGasClouds` | 0.30 | drifting gas-cloud layer between windings |
+| 23 | `uOvalness` | 1.09 |  |
+| 24 | `uCamTilt` | 1.26 | radians off top-down; the dive drives this — §6 |
+| 25 | `uCompactness` | 1.88 |  |
+| 26 | `uStarDensity` | 3.68 |  |
+| 27 | `uMaxStarLod` | 2.0 | caps star-grid refill during the dive |
+| 28 | `uTwinkleFraction` | 0.00 |  |
+| 29 | `uTwinkleSpeed` | 0.00 |  |
+| 30 | `uTwinkleTime` | wall clock | wall clock — never the scaled `iTime` |
+| 31 | `uPxSize` | 0.01285 | recompute on resize/zoom/tilt — §7 |
+| 32 | `uBlackHoleSize` | 0.049 |  |
+| 33–35 | `uNormalCenterColor` | 0.886, 0.878, 1.000 |  |
+| 36–38 | `uNormalArmColor` | 0.639, 0.651, 1.000 |  |
+| 39–41 | `uNormalHazeColor` | 1.000, 1.000, 1.000 |  |
+| 42–44 | `uNormalStarColor` | 1.000, 1.000, 1.000 |  |
+| 45 | `uCenterSpread` | 0.33 | how far the centre tint reaches |
 
-Total: 61 floats.
+Total: **46 floats**.
+
+> **Single mode.** The product ships the resting spiral only, so
+> `uColorTransition`, `uCoreMode`, `uCorona` and the four boom-palette
+> colours are gone from the shader entirely. The `uNormal*` names are
+> kept (rather than renamed to bare `uCenterColor` etc.) purely so this
+> build stays diff-able against `galaxy_editor_with_boom.html`.
 
 ### Authoring aspect
 
@@ -164,7 +174,7 @@ Reference driver, mirroring the editor's `frame()` exactly:
 class GalaxyDriver {
   double shaderTime = 0, twinkleTime = 0;
   double zoom = 1, fade = 1, hazePulse = 1;
-  double colorTransition = 0, coreMode = 0, camTiltSlider = 1.26;
+  double camTiltSlider = 1.26;
   bool   diving = false;
   double _diveElapsedMs = 0;
 
@@ -177,8 +187,8 @@ class GalaxyDriver {
   static const _diveSpin = 50.0;
   static double _ss(double x) { x = x.clamp(0.0, 1.0); return x * x * (3 - 2 * x); }
 
-  /// Plays the dive. It carries no target mode: the view comes back as it
-  /// left. Set colorTransition / coreMode from your mode buttons instead.
+  /// Plays the dive. The view comes back exactly as it left -- this build
+  /// has a single mode, so there is nothing to swap.
   void startDive() {
     diving = true; _diveElapsedMs = 0;
   }
@@ -301,8 +311,8 @@ the perspective foreshortening of the old squash factor.)
   fully skipped.
 - **Haze cost is per-layer on/off, not proportional.** Slider values are
   post-multipliers; the noise runs at any value above 0. Exactly 0 trips
-  the skip: `uArmSmoke`+`uCoreGlow` share one gate (both must be 0 to skip their
-  smoke pass), `uCorona` is ~free.
+  the skip: `uArmSmoke` + `uCoreGlow` share one gate — both must be 0 to
+  skip their smoke pass.
 
 ## 9. Low-battery / power-saver mode
 
@@ -329,12 +339,46 @@ near-free. Remember to keep `iResolution`/`uPxSize` consistent with the
 DPR you actually render at (§7), and restore everything when
 `isInBatterySaveMode` clears.
 
-## 10. Palette / mode cheat sheet
+## 10. Constraints — things that look like optimisations and are not
 
-- **Normal mode**: `uColorTransition = 0`, `uCoreMode = 0` (black hole),
-  normal palette at indices 48–59.
-- **Boom mode**: `uColorTransition = 1`, `uCoreMode = 1` (white core),
-  boom palette at indices 36–47.
-- The dive does **not** switch modes. `startDive()` returns to the mode it
-  began in; set `uColorTransition` and `uCoreMode` from your own mode
-  buttons, either instantly or on whatever transition the app wants.
+Each of these was implemented, measured and reverted. They are recorded so
+the same ground is not re-covered.
+
+**The bulge must keep its own height.** `hBulge` is 3x `hDisk`, which means
+each sheet runs two lattice walks instead of one. Merging them onto a
+single walk is worth ~22% of the frame — and it visibly flattens the core,
+thinning the diffuse scatter that sits *off* the disk plane. The extra
+height is load-bearing.
+
+**The arm envelope must be evaluated per sheet.** Every sheet rebuilds
+`armAngleMask` / `armRadialFade` / `armDissolve` / `armStarKeep` at its own
+footprint, which looks redundant. It is not: the mask *position* carries
+thickness. Hoisting it to the mid-plane pins the arm band, so only stars
+inside a fixed band can shift and the arms stop thickening with the slider
+while the bulge keeps spreading. Ablation later showed those masks cost
+~1 ms anyway.
+
+**Camera roll is the wrong tool for "the dive looks static."** Rolling the
+frame turns the whole picture, not the arms. Camera *orbit* is worse still
+— for an axisymmetric disk it is mathematically identical to counter-
+rotating the pattern, i.e. exactly what `uRotSpeed` already does. The lever
+that works is `_diveSpin` (§5).
+
+**The dive tilt curve is deliberately exponential.** Making it linear
+spreads the descent evenly, which flattens the shot early and drains the
+plunge of its moment.
+
+### Where the time actually goes (measured by ablation)
+
+| | share of frame |
+|---|---:|
+| star lattice, all forms | ~76% |
+| smoke stack | ~5% |
+| camera/ray + masks + core + gas + dither + colour | ~17% |
+
+The arm masks, gas clouds, corona, wobble and twinkle are all at or below
+the noise floor — tuning them buys nothing. The only in-shader lever with
+real headroom left is the per-cell early reject in the star lattice
+(reject on distance before computing size/radius/attenuation). Everything
+else worth having is host-side: **render resolution**, which scales all of
+the above, and **30 fps pacing at rest** (§8).

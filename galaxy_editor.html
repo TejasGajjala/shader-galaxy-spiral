@@ -1298,12 +1298,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float rCore = length(p);    // true radius: the core itself stays round
 
     // --- COMPUTE BOOM MODE ---
-    // NORMAL-ONLY BUILD. The boom palette, uColorTransition, the corona
-    // and the white-core branch were all stripped here -- see
-    // galaxy_editor_full.html for the two-mode original, and
-    // galaxy.frag / galaxy_shader_V1.3.glsl, which remain the production
-    // truth and STILL CARRY BOTH MODES. Anything tuned here has to be
-    // ported back to those before it ships.
+    // SINGLE-MODE BUILD, matching galaxy.frag exactly. The boom palette,
+    // uColorTransition, the corona and the white-core branch are gone --
+    // galaxy_editor_with_boom.html keeps the two-mode original for
+    // reference. This shader body and galaxy.frag's are line-for-line
+    // identical, so anything tuned here ports across verbatim.
     // Center tint fades out on a gaussian -- no visible edge, unlike a
     // smoothstep band which reads as a drawn circle. uCenterSpread sets
     // how far the tint reaches (weight = exp(-d^2/spread^2)).
@@ -1470,7 +1469,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // Normal-only build: the boom palette (uCenterColor/uArmColor/
   // uOuterHazeColor/uStarColor) is gone, so the uNormal* set is the only
   // palette. Names keep the prefix to stay diff-able against
-  // galaxy_editor_full.html and the production shader.
+  // galaxy_editor_with_boom.html and the production shader.
   const VEC_UNIFORM_TO_KEY = {
     uNormalCenterColor: 'normalCenter', uNormalArmColor: 'normalArm',
     uNormalHazeColor: 'normalHaze', uNormalStarColor: 'normalStar'
@@ -1581,7 +1580,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
       'uBlackHoleSize   = ' + state.blackHoleSize.toFixed(3) + ';',
       // Normal-only build: this is the ONLY palette. The boom set and
-      // uColorTransition live in galaxy_editor_full.html.
+      // uColorTransition live in galaxy_editor_with_boom.html.
       '',
       '// --- palette (the resting state) ---',
       'uNormalCenterColor = ' + fmtVec(state.normalCenter) + ';',
