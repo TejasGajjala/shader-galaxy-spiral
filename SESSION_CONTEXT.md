@@ -795,3 +795,37 @@ clock (6000 + one software frame); mode and button label unchanged across
 a dive; no console errors. FLUTTER_IMPLEMENTATION.md section 5 (phase
 diagram + Dart driver), section 6 (tilt), the uFade row and the mode
 cheat-sheet all updated to match.
+
+## Item 63: Second load audit (post-dive-rework, production defaults)
+
+SwiftShader, 392x840 (0.33 Mpx), rest frame 400 ms base. Marginal costs by
+toggle (ratios are the signal, not the ms):
+
+| what                                   | ms  | % of frame |
+|----------------------------------------|-----|------------|
+| whole thick-path machinery (T=0 diff)  | 213 | 53%        |
+|   - machinery at ~zero height (T=0.05) | 121 | 30%        |
+|   - 3rd sheet (1.35 vs 1.00)           | 71  | 18%        |
+|   - bulge sheet walks (bulge 0)        | 30  | 7.5%       |
+|   - per extra sheet (curve to T=3)     | ~59 |            |
+| smoke stack (armSmoke+coreGlow off)    | 34  | 8.5%       |
+| arm wobble (0.19 -> 0)                 | 22  | 5.5%  NEW  |
+| gas clouds                             | 16  | 4%         |
+| corona                                 | 14  | 3.5%       |
+| floor (all off; ray+flat walk+masks)   | 155 | 39% irreducible-ish |
+
+Sheet-count curve is linear (~59 ms/sheet): 2 sheets 329, 3 = 400,
+4 = 456, 6 = 566. The thick machinery costs 121 ms BEFORE any height
+shows (T=0.05): 2 arm + 2 bulge + 2 floater walks replacing 1 flat walk.
+
+Dive per-frame cost by zoom band (2 runs, deep bands are 1-2 frames --
+approximate): pulse 354; z 1-0.5 523; z 0.5-0.25 (LOD blend) 759;
+z 0.25-0.05 (flares wake, galaxy fills frame) ~904 peak (~2.3x rest);
+z<0.05 + hold 260 (hole covers screen, early-outs win).
+
+Fullscreen at 0.84 Mpx measured 817 ms = 2.0x rest for 2.55x pixels
+(sub-linear; sky pixels are cheap). At the 2.2 Mpx cap on a 3x phone
+expect ~4-5x the phone-frame cost.
+
+Arm wobble is a new default-on cost since the item-29 audit (5.5% -- its
+noise eval runs per sheet per pixel). Twinkle is now free (off).
