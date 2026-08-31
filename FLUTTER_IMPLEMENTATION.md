@@ -75,10 +75,8 @@ reorder declarations there without rebuilding this table.
 | 54–56 | `uNormalHazeColor` | 1.0, 1.0, 1.0 | normal |
 | 57–59 | `uNormalStarColor` | 1.0, 1.0, 1.0 | normal |
 | 60 | `uCenterSpread` | 0.33 |  |
-| 61 | `uCamRoll` | 0.0 | camera roll about the view axis, RADIANS. Host-driven like `uZoom`; 0 at rest |
 
-Total: 62 floats. (`uCamRoll` is appended last precisely so every index
-above it is unchanged — do not reorder.)
+Total: 61 floats.
 
 ### Authoring aspect
 
@@ -114,7 +112,7 @@ class GalaxyPainter extends CustomPainter {
     // NOTE: if the canvas is NOT drawn at physical resolution (no
     // canvas.scale(1/dpr)), pass logical pixels instead - iResolution
     // must match the coordinate space FlutterFragCoord() reports in.
-    driver.upload(shader, w, h);   // sets all 62 floats
+    driver.upload(shader, w, h);   // sets all 61 floats
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
   }
 
@@ -223,42 +221,6 @@ class GalaxyDriver {
   }
 }
 ```
-
-## 5b. Dive camera roll (`uCamRoll`)
-
-The pattern spin (`ang = -uRotSpeed * iTime`) is a rigid rotation of the
-galaxy, and during the dive it is close to invisible: measured over a full
-dive it delivers only ~48° across the visible zoom, while the radial rush
-runs 2–11× the tangential speed, and by the deep end the arms have faded
-to a near-isotropic star swarm that shows no rotation at all.
-
-Camera **roll** solves it where a faster spin cannot, because it is
-scale-invariant — it turns the finished frame by the same angle at every
-zoom depth, and it turns the star swarm with it.
-
-Note that camera **orbit** would NOT help: for an axisymmetric disk,
-orbiting the camera about the galaxy's axis is mathematically identical to
-counter-rotating the pattern, i.e. exactly what `ang` already does.
-
-Roll rides the same eased zoom progress, so the frame turns fastest when
-the plunge is fastest, holds through the core beat, and returns to 0 on
-reset (and on any aborted dive):
-
-```dart
-// _diveRollDeg is choreography, like _zoomEase - not a uniform.
-static const _diveRollDeg = 0.0;   // 120-240 reads clearly; 0 = no roll
-double camRoll = 0;                // -> uCamRoll (idx 61), RADIANS
-
-// inside the zoom phase, with pz the eased progress:
-camRoll = _diveRollDeg * math.pi / 180.0 * pz;
-// hold phase: camRoll = _diveRollDeg * math.pi / 180.0;
-// on reset or abort: camRoll = 0;
-```
-
-In the shader the roll is applied in pixel-isotropic space, before the
-anisotropic screen convention, so the image turns rigidly instead of
-swinging the disk's ~1.53:1 ellipse as it rotates. It is uniform-gated:
-`uCamRoll = 0` is free and bit-identical.
 
 ## 6. Dive camera tilt
 
