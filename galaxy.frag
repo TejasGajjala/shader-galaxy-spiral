@@ -127,10 +127,10 @@ uniform float uTwinkleSpeed;    // pulse rate, independent of rotation
 uniform float uTwinkleTime;     // wall-clock time (not the scaled iTime)
 uniform float uPxSize;          // p-space size of one screen pixel (anti-alias)
 uniform float uBlackHoleSize;
-// Normal mode's palette: same four roles as boom's, driving an exact
-// decomposition of the original grayscale formula -- with all four left at
-// the same neutral gray the output is bit-identical to the old single-tint
-// look, and editing one recolors only that element (arms/center/haze/stars).
+// Palette. Four roles driving an exact decomposition of the original
+// grayscale formula: with all four left at the same neutral gray the
+// output is bit-identical to the old single-tint look, and editing one
+// recolors only that element (arms / center / haze / stars).
 uniform vec3 uNormalCenterColor;
 uniform vec3 uNormalArmColor;
 uniform vec3 uNormalHazeColor;
@@ -827,7 +827,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // and in the sky band past the horizon -- only the background stars
     // and the dither can produce non-black output, so skip both smoke
     // stacks and every star lattice. Every falloff (smoke exp(-r^2), the
-    // gaussian bulge, arm taper, corona, core glow) is sub-quantization
+    // gaussian bulge, arm taper, core glow) is sub-quantization
     // past r = 2.5; the margin grows with uDiskThickness so off-plane
     // floater sheets are never clipped. Radial branch = spatially
     // coherent. Real savings: at rest tilt the sky band alone is a big
@@ -1111,21 +1111,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // horizon (see camDenom above) reads as clean black/background instead
     // of the saturated fallback coordinate.
     float k  = uCompactness * smoke * groundVis;              // smoky spiral body
-    float sV = uCompactness * starsV * groundVis;             // star layer (normal mode)
-    float starsB = uCompactness * starsV * 0.8 * groundVis;   // star brightness (boom mode)
+    float sV = uCompactness * starsV * groundVis;             // star layer
     float dist = length(pOval); // structural radius: tints/glows follow the oval
     float rCore = length(p);    // true radius: the core itself stays round
 
-    // --- COMPUTE BOOM MODE ---
-    // SINGLE-MODE BUILD. The boom palette, uColorTransition, the corona
-    // and the white-core branch were removed at handoff: the product ships
-    // the resting spiral only. galaxy_editor_with_boom.html keeps the
-    // two-mode original if it is ever needed again.
+    // --- COMPOSE ---
+    // Single mode. The boom palette, uColorTransition, the corona and the
+    // white-core branch were removed at handoff: the product ships the
+    // resting spiral only. galaxy_editor_with_boom.html keeps the two-mode
+    // original for reference.
     // Center tint fades out on a gaussian -- no visible edge, unlike a
     // smoothstep band which reads as a drawn circle. uCenterSpread sets
     // how far the tint reaches (weight = exp(-d^2/spread^2)).
     float centerW = exp(-(dist * dist) / (uCenterSpread * uCenterSpread));
-    // --- COMPUTE NORMAL MODE ---
     // Exact decomposition of the original grayscale formula
     //   lum = (0.2*kA^2 + 0.7*kA) / 3,  kA = k + sV   (the 0.4*b glow term
     //   left with the removed secondary glow layer)
