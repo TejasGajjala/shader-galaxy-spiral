@@ -142,6 +142,16 @@ uniform vec3 uNormalArmColor;
 uniform vec3 uNormalHazeColor;
 uniform vec3 uNormalStarColor;
 uniform float uCenterSpread;    // how far the center tint reaches (gaussian)
+uniform float uCamRoll;         // camera ROLL about the view axis, radians.
+                                // Turns the finished image, not the galaxy:
+                                // unlike the pattern spin (ang) it is
+                                // SCALE-INVARIANT, so it reads the same at
+                                // every zoom depth. That is what makes it
+                                // legible in the deep dive, where the radial
+                                // rush runs ~11x the tangential speed and the
+                                // remaining star swarm is too isotropic to
+                                // show a pattern rotation at all. Host-driven
+                                // like uZoom. 0 = no roll, bit-identical.
 
 const mat2 m2 = mat2(0.8, 0.6, -0.6, 0.8);
 
@@ -738,6 +748,17 @@ vec2 smokeMap(vec2 ps, vec2 pd){
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 p = 2.0*fragCoord.xy/iResolution.xy - 1.0;
+    // Camera roll, applied HERE in pixel-isotropic space (p * iResolution
+    // is twice the pixel offset from centre). The p convention below is
+    // deliberately ANISOTROPIC -- equal p units span the full width and
+    // the full height, which is what renders the disk as the intended
+    // ~1.53:1 ellipse -- so rolling in that space would swing the
+    // ellipse's proportions as it turned. Rolling in pixel space turns
+    // the finished image rigidly, the way a real camera does.
+    // Uniform-gated, so a roll of 0 is free and bit-identical.
+    if (abs(uCamRoll) > 0.0001) {
+        p = rotate(p * iResolution.xy, uCamRoll) / iResolution.xy;
+    }
     // Aspect correction. The mapping above normalises BOTH axes to [-1,1]
     // independently, so without this the whole scene stretches to whatever
     // shape the canvas happens to be: the same uniforms gave a galaxy of

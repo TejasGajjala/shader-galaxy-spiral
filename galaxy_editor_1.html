@@ -426,6 +426,16 @@ uniform vec3 uNormalArmColor;
 uniform vec3 uNormalHazeColor;
 uniform vec3 uNormalStarColor;
 uniform float uCenterSpread;    // how far the center tint reaches (gaussian)
+uniform float uCamRoll;         // camera ROLL about the view axis, radians.
+                                // Turns the finished image, not the galaxy:
+                                // unlike the pattern spin (ang) it is
+                                // SCALE-INVARIANT, so it reads the same at
+                                // every zoom depth. That is what makes it
+                                // legible in the deep dive, where the radial
+                                // rush runs ~11x the tangential speed and the
+                                // remaining star swarm is too isotropic to
+                                // show a pattern rotation at all. Host-driven
+                                // like uZoom. 0 = no roll, bit-identical.
 
 const mat2 m2 = mat2(0.8, 0.6, -0.6, 0.8);
 
@@ -1022,6 +1032,17 @@ vec2 smokeMap(vec2 ps, vec2 pd){
 
 void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     vec2 p = 2.0*fragCoord.xy/iResolution.xy - 1.0;
+    // Camera roll, applied HERE in pixel-isotropic space (p * iResolution
+    // is twice the pixel offset from centre). The p convention below is
+    // deliberately ANISOTROPIC -- equal p units span the full width and
+    // the full height, which is what renders the disk as the intended
+    // ~1.53:1 ellipse -- so rolling in that space would swing the
+    // ellipse's proportions as it turned. Rolling in pixel space turns
+    // the finished image rigidly, the way a real camera does.
+    // Uniform-gated, so a roll of 0 is free and bit-identical.
+    if (abs(uCamRoll) > 0.0001) {
+        p = rotate(p * iResolution.xy, uCamRoll) / iResolution.xy;
+    }
     // Aspect correction. The mapping above normalises BOTH axes to [-1,1]
     // independently, so without this the whole scene stretches to whatever
     // shape the canvas happens to be: the same uniforms gave a galaxy of
@@ -1485,19 +1506,19 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread','uCamRoll'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 19.5, armSpacing: 1.03, armFalloff: 0.70, armSpread: 0.69, armEdgeSkew: 1.0, rimCoarse: 0.22, armWobble: 0.19,
     armSmoke: 0.80, smokeSkew: 0.62, coreGlow: 1.0, coreGlowSpread: 0.75, corona: 0.82, gasClouds: 0.30, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 1.0, ovalness: 1.09, camTilt: 1.26, rotSpeed: 0.036,
     compactness: 1.88, starDensity: 3.68, maxStarLod: 2.0, twinkleFraction: 0.0, twinkleSpeed: 0.0,
-    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.33, zoomEase: 0.75,
+    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.33, zoomEase: 0.75, diveRoll: 0,
     center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
     star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase'];
+  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase','diveRoll'];
   const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
@@ -1535,7 +1556,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // Dive-animation param (JS choreography, NOT a shader uniform, so it
     // doesn't appear in the Copy-GLSL block): 0 = linear zoom, 1 = full
     // ease-in-out. 0.75 = slow start, fast middle, slow finale.
-    { key: 'zoomEase',        label: 'Zoom ease (dive)',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) }
+    { key: 'zoomEase',        label: 'Zoom ease (dive)',   min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
+    // Total camera roll swept over the dive, in degrees. Choreography, so
+    // JS-only like zoomEase -- the SHADER uniform uCamRoll carries the
+    // live angle, which this ramps. ~120-240 reads clearly against the
+    // radial rush; 0 is the old look exactly.
+    { key: 'diveRoll',        label: 'Camera roll (dive)', min: 0,    max: 720,  step: 5,     fmt: v => v.toFixed(0) + '\u00b0' }
   ];
   // One set of four pickers, bound to whichever mode is active: in normal
   // mode they edit the normal* palette, in boom mode the boom palette. Both
@@ -1739,6 +1765,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         ';   // 0 = normal palette, 1 = boom. THIS BLOCK WAS COPIED IN ' +
         (colorTransition > 0.5 ? 'BOOM' : 'NORMAL') + ' MODE',
       '// uHazePulse       = 1.0;   // "come alive" beat, 1 = neutral',
+      '// uCamRoll         = 0.0;   // camera roll in RADIANS, 0 at rest; ramps over the dive',
       // zoom is 1.0 at rest by definition -- do NOT read currentZoom here,
       // it is declared after the first sync() call and would be in its
       // temporal dead zone.
@@ -2268,6 +2295,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
   let currentZoom = 1.0;
   let currentFade = 1.0;
+  let currentRoll = 0.0;   // live camera-roll angle (radians) -> uCamRoll
   let isZooming = false;
   let zoomStartTime = 0;
   let shaderTime = 0.0;
@@ -2333,6 +2361,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   function abortZoom() {
     isZooming = false;
     isPaused = false;
+    // Roll must come home too: the instant buttons reset zoom and fade,
+    // and without this an aborted dive would leave the view rolled for
+    // good (there is no other path that clears it).
+    currentRoll = 0.0;
     boomBtn.disabled = false;
     boomBtn.style.pointerEvents = 'auto';
     boomBtn.style.opacity = '1';
@@ -2431,12 +2463,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         const p = t / duration;
         const pz = p + (p * p * (3.0 - 2.0 * p) - p) * ZOOM_EASE;
         currentZoom = Math.max(0.0001, 1.0 - pz);
+        // Roll rides the SAME eased progress as the zoom, so the frame
+        // turns fastest exactly when the plunge is fastest.
+        currentRoll = state.diveRoll * Math.PI / 180.0 * pz;
         hazePulse = 1.0 + 0.25 * Math.max(0.0, 1.0 - t / 800); // settle the overshoot
         currentFade = 1.0;
       } else if (elapsed < PULSE + duration + HOLD) {
         shaderTime += delta;
         currentZoom = 0.0001;
         currentFade = 1.0;
+        currentRoll = state.diveRoll * Math.PI / 180.0;
       } else {
         // Dive over -- back to the resting view in the SAME mode it began
         // in. The palette and core style are no longer touched here:
@@ -2448,6 +2484,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         isZooming = false;
         currentZoom = 1.0;
         currentFade = 1.0;
+        currentRoll = 0.0;
         boomBtn.disabled = false;
         boomBtn.style.pointerEvents = 'auto';
         boomBtn.style.opacity = '1';
@@ -2499,6 +2536,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uPxSize, pxSize);
     gl.uniform1f(U.uColorTransition, colorTransition);
     gl.uniform1f(U.uZoom, currentZoom);
+    gl.uniform1f(U.uCamRoll, currentRoll);
     gl.uniform1f(U.uFade, currentFade);
     gl.uniform2f(U.iResolution, gl.canvas.width, gl.canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 6);

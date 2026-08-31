@@ -903,3 +903,46 @@ Corrections this table locks in: audit-2's "machinery 121/30%" holds
 optimization targets with real money are the sheet machinery, the sheet
 count, and (during the dive) the z 0.5-0.05 stretch; plus resolution,
 which multiplies everything.
+
+## Item 66: Camera roll (uCamRoll) -- making the dive read as rotating
+
+**Problem measured (item 65 follow-up):** during the dive the spiral looks
+stationary. Traced the rotation actually delivered: `ang = -uRotSpeed *
+iTime` is a RIGID spin, 2.06 deg/s at rest, and the dive's 5x->20x clock
+ramp yields only 53.4 deg total / 47.7 deg across the visible zoom -- about
+a quarter of one arm period for the 2-arm pattern. Two reasons it reads as
+frozen: (1) radial rush is 2.3x the tangential speed early and ~11x by the
+deep end, so rotation is perceptually swamped; (2) the `depth^3` ramp puts
+the acceleration in the last stretch, exactly where the arms have faded and
+only a near-isotropic star swarm remains -- and a random field is
+rotation-invariant.
+
+**Rejected: camera orbit.** For an axisymmetric disk, orbiting the camera
+about the galaxy axis is mathematically IDENTICAL to counter-rotating the
+pattern. It buys nothing over `ang`.
+
+**Chosen: camera ROLL about the view axis.** Scale-invariant -- turns the
+finished frame by the same angle at every depth, and turns the star swarm
+with it, so it stays legible exactly where pattern spin dies. Also touches
+nothing structural: no arm shear, no LOD interaction, no winding change.
+
+Implementation: `uCamRoll` (radians, host-driven like uZoom) APPENDED at
+index 61 -> 62 floats, so no existing index shifts. Applied at the top of
+mainImage in PIXEL-ISOTROPIC space (`rotate(p * iResolution, roll) /
+iResolution`) -- the p convention is deliberately anisotropic (it is what
+renders the disk as the intended ~1.53:1 ellipse), so rolling in p-space
+would swing the ellipse's proportions as it turned. Uniform-gated: 0 is
+free and bit-identical.
+
+Editor: `diveRoll` slider in DEGREES of total sweep, JS-only following the
+zoomEase precedent (choreography lives in the host, not the shader). Rides
+the same eased pz as the zoom, holds through the core beat, resets to 0 on
+completion AND in abortZoom() -- without the latter an instant-button
+abort would leave the view permanently rolled.
+
+DEFAULT IS 0, i.e. the current look is unchanged until dialled in.
+~120-240 deg reads clearly against the radial rush.
+
+Verified in headless Chromium: compiles clean; with the slider at 180 the
+uCamRoll trace ramps 0 -> 26 -> 63 -> 120 -> 180 deg across the zoom bands
+and holds; no console errors; the three shader bodies remain byte-identical.
