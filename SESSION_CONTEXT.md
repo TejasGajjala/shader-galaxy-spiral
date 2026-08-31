@@ -956,3 +956,32 @@ TWO findings:
    final instant, where almost no time is spent. If the MID dive needs
    more rotation, the lever is the EXPONENT (depth^3 -> depth^2), not the
    ceiling. Not changed -- flagged for the user to judge visually first.
+
+## Item 68: Dive choreography now appears in the values block
+
+Reported: the new Dive spin peak slider was not visible in the values
+text. Correct as built -- it was JS-only "following the zoomEase
+precedent" -- but the precedent was itself a gap: zoomEase had NEVER
+appeared in the block either, so a tuned dive could not be copied,
+handed to the Flutter team, or restored by paste-back. Same class of
+problem as the palette-labelling confusion (item ~58).
+
+Both now emit under their own header:
+
+  // --- dive choreography: HOST-SIDE constants, NOT shader uniforms ---
+  uZoomEase        = 0.75;
+  uDiveSpin        = 55;
+
+The u-prefix exists only because applyGlslText's regex keys on it
+(/\b(u[A-Za-z]+)\s*=/); the header is what stops anyone binding them as
+uniforms. Added to UNIFORM_TO_KEY so they re-parse and clamp through
+STRUCT_BY_KEY like any slider. sync() uploads by explicit gl.uniform1f
+calls rather than looping the map, so nothing attempts to bind them --
+verified no console errors.
+
+Round-trip verified: edited to 0.35 / 90 in the textarea, applied (36
+values), sliders followed, block re-emitted the new values.
+
+Rule going forward: any tuning value a user can change MUST appear in the
+values block. "It's host-side" is not a reason to hide it -- the block is
+a settings handover, not a uniform dump.

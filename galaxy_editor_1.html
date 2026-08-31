@@ -1563,6 +1563,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // into and applied. Scalars are clamped to the same min/max as their
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
   const UNIFORM_TO_KEY = {
+    // Not shader uniforms -- host-side dive choreography. Listed here so
+    // the values block emits and re-parses them like everything else;
+    // sync() uploads by explicit call, so nothing tries to bind them.
+    uZoomEase: 'zoomEase', uDiveSpin: 'diveSpin',
     uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing', uArmFalloff: 'armFalloff', uArmSpread: 'armSpread', uArmEdgeSkew: 'armEdgeSkew',
     uRimCoarse: 'rimCoarse', uArmWobble: 'armWobble',
     uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
@@ -1731,6 +1735,15 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
       'uNormalStarColor   = ' + fmtVec(state.normalStar) + ';',
       'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';',
+      // Dive choreography. These shape the dive but are NOT shader
+      // uniforms -- the host owns them (Dart: _zoomEase / _diveSpin).
+      // They were missing from this block entirely, so a tuned dive could
+      // not be copied or handed over; the u-prefix is only there because
+      // the parser keys on it, hence the explicit header.
+      '',
+      '// --- dive choreography: HOST-SIDE constants, NOT shader uniforms ---',
+      'uZoomEase        = ' + state.zoomEase.toFixed(2) + ';',
+      'uDiveSpin        = ' + state.diveSpin.toFixed(0) + ';',
       // Host-driven uniforms. These are NOT sliders -- the app animates
       // them -- so they never appeared in this block, which meant anyone
       // pasting it into another renderer had to GUESS seven inputs and
