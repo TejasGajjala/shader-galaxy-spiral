@@ -1001,3 +1001,38 @@ early and drains the plunge of its moment.
 
 Do not "fix" the exponential tilt curve again. If a middle ground is ever
 wanted, dp^2 is the knob -- but the default stays exponential.
+
+## Item 70: Split -- full two-mode build archived, working file trimmed to normal
+
+`galaxy_editor_full.html` = the complete two-mode editor at production
+sign-off (both palettes, mode toggles, core-style switch, values block,
+HD recorder, Randomise). Parked, header comment explains it.
+
+`galaxy_editor_1.html` = NORMAL-STATE ONLY working file. 2541 -> 1911
+lines. Removed: the HD recorder (superseded by fullscreen), mode toggles
+and uColorTransition, the boom palette, uCorona (boom-only), uCoreMode
+and the white-core branch, the core-style toggle, the GLSL values block
+(textarea/copy/apply/glslText/applyGlslText/uniform maps). Kept:
+sliders, normal palette pickers, Randomise, Reset, dive (button relabelled
+"Dive"), pause, snapshot, fullscreen.
+
+Shader collapsed accordingly: `finalCol = normalLayer` with no mix, the
+core section reduced to the black hole (rim and coreGlow were identically
+zero at uCoreMode = 0), corona gone. 7 uniforms dropped from this file.
+
+CRITICAL: galaxy.frag and galaxy_shader_V1.3.glsl are UNTOUCHED and still
+carry both modes -- they remain the production truth for the Flutter port.
+The trimmed editor's shader has DIVERGED from them. Anything tuned here
+must be ported back before it ships. The three-files-byte-identical
+invariant no longer holds and must not be asserted.
+
+Verified: renders identically to the archive in normal mode (side-by-side
+canvas captures), no console errors, 476 vs 510 ms/frame (~7% -- the
+saving is small because the boom layer was cheap next to the star and
+smoke work; the real win is a file half the size to iterate in).
+
+Recovery notes for the two range-cuts that overshot: buildControls() sat
+between updateCoreBtnLook() and buildColorControls(), and structEl /
+colorEl were declared next to glslOut -- both were collateral and were
+restored from the archive. A declared-vs-referenced diff against the
+archive is the way to catch that class of mistake.

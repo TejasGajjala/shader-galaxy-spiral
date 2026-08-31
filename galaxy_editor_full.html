@@ -3,7 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Galaxy shader editor</title>
+<title>Galaxy shader editor (full, two-mode)</title>
+<!-- ARCHIVE. The complete two-mode editor as of the production sign-off:
+     normal + boom palettes, mode toggles, core-style switch, the GLSL
+     values block, the HD recorder, Randomise. Parked here so iteration can
+     continue in galaxy_editor_1.html, which is trimmed to the NORMAL state
+     only. Nothing here is wired to that file -- if a change lands there and
+     needs to ship, port it to galaxy.frag / galaxy_shader_V1.3.glsl (which
+     remain the production truth and still carry both modes), and to this
+     archive if the two-mode build is ever revived. -->
 <style>
   * { box-sizing: border-box; }
   body {
@@ -90,12 +98,14 @@
      otherwise outrank these. */
   #phone.fs-idle #fs-btn,
   #phone.fs-idle #snap-btn,
+  #phone.fs-idle #rec-btn,
+  #phone.fs-idle #rec-size,
   #phone.fs-idle #boom-btn,
   #phone.fs-idle #pause-btn,
-  #phone.fs-idle #pause-btn {
+  #phone.fs-idle .instant-row {
     opacity: 0 !important; pointer-events: none !important;
   }
-  #phone #boom-btn, #phone #pause-btn {
+  #phone #boom-btn, #phone #pause-btn, #phone .instant-row, #phone #rec-size {
     transition: opacity 0.35s ease;
   }
 
@@ -111,19 +121,57 @@
   /* Snapshot overlay: the sandboxed artifact webview blocks anchor
      downloads, so the high-res render is shown in-page instead and saved
      via the browser's own "Save image as..." (needs no permission). */
-  #snap-overlay {
+  #rec-btn {
+    position: absolute; top: 14px; right: 60px; z-index: 5;
+    width: 38px; height: 38px; border-radius: 50%; border: none;
+    cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 22, 40, 0.55); color: rgba(255, 255, 255, 0.8);
+  }
+  #rec-btn:hover { background: rgba(217, 70, 239, 0.55); color: #fff; }
+  #rec-btn[disabled] { cursor: default; background: rgba(217, 70, 239, 0.75); color: #fff; }
+  #rec-btn svg { width: 18px; height: 18px; }
+  /* Capture progress. A capture renders far slower than real time, so the
+     canvas necessarily looks frozen while it runs -- without a bar, a
+     frame count and a way out, that is indistinguishable from a hang. */
+  #rec-status {
+    position: absolute; top: 14px; left: 14px; right: 104px; z-index: 6;
+    display: none; flex-direction: column; gap: 6px;
+    background: rgba(12, 14, 28, 0.88); border-radius: 8px; padding: 8px 10px;
+  }
+  #rec-status.on { display: flex; }
+  #rec-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,0.15); overflow: hidden; }
+  #rec-bar > i { display: block; height: 100%; width: 0%; background: #d946ef; }
+  #rec-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #rec-text {
+    font-size: 10px; color: rgba(255,255,255,0.85);
+    font-variant-numeric: tabular-nums; letter-spacing: 0.02em;
+  }
+  #rec-cancel {
+    border: none; border-radius: 5px; padding: 3px 9px; cursor: pointer;
+    font-size: 10px; font-weight: 600;
+    background: rgba(255,255,255,0.16); color: rgba(255,255,255,0.9);
+  }
+  #rec-cancel:hover { background: rgba(255,255,255,0.26); }
+  #rec-size {
+    position: absolute; top: 58px; right: 14px; z-index: 5;
+    background: rgba(20, 22, 40, 0.75); color: rgba(255,255,255,0.85);
+    border: 1px solid rgba(255,255,255,0.15); border-radius: 6px;
+    font-size: 10px; padding: 3px 5px; cursor: pointer;
+  }
+  #snap-overlay, #rec-overlay {
     position: fixed; inset: 0; z-index: 50; display: none;
     background: rgba(5, 6, 12, 0.92);
     align-items: center; justify-content: center; flex-direction: column;
     gap: 12px; padding: 24px;
   }
-  #snap-overlay.open { display: flex; }
-  #snap-overlay img {
+  #snap-overlay.open, #rec-overlay.open { display: flex; }
+  #snap-overlay img, #rec-overlay video {
     max-width: 92vw; max-height: 82vh; border-radius: 8px;
     box-shadow: 0 8px 40px rgba(0, 0, 0, 0.8);
   }
-  #snap-overlay .snap-hint { font-size: 13px; color: rgba(255,255,255,0.75); text-align: center; }
-  #snap-overlay .snap-close {
+  #snap-overlay .snap-hint, #rec-overlay .snap-hint { font-size: 13px; color: rgba(255,255,255,0.75); text-align: center; }
+  #snap-overlay .snap-close, #rec-overlay .snap-close {
     border: none; border-radius: 8px; padding: 8px 18px; cursor: pointer;
     background: rgba(255,255,255,0.14); color: rgba(255,255,255,0.9);
   }
@@ -138,6 +186,18 @@
   #pause-btn:hover { background: #34344a; }
   #pause-btn:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
 
+  .instant-row {
+    position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%);
+    display: flex; gap: 6px;
+  }
+  .instant-row button {
+    padding: 6px 12px; border-radius: 5px; font-size: 10px; font-weight: 500;
+    cursor: pointer; border: none; transition: all 0.15s ease;
+    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.15);
+  }
+  .instant-row button:hover { background: rgba(255,255,255,0.12); }
+  .instant-row button:active { box-shadow: 0 1px 2px rgba(0,0,0,0.1); }
   #panel { width: 100%; max-width: 560px; margin-top: 20px; flex: 1 1 420px; min-width: 0; }
   @media (min-width: 901px) { #panel { margin-top: 0; } }
   .section-title { font-size: 13px; font-weight: 600; margin: 16px 0 8px; }
@@ -159,6 +219,19 @@
     box-shadow: 0 4px 10px rgba(124, 106, 247, 0.15);
   }
   #actions button:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+  #glsl-out { display: block; width: 100%; margin-top: 10px; padding: 10px 12px; background: #181826; border-radius: 8px; border: 0.5px solid rgba(255,255,255,0.2); font-family: monospace; font-size: 11px; line-height: 1.6; color: rgba(255,255,255,0.85); white-space: pre; resize: vertical; box-sizing: border-box; height: 220px; }
+  #glsl-out:focus { outline: none; border-color: #7c6af7; }
+  #glsl-hint { font-size: 11px; color: rgba(255,255,255,0.4); margin-top: 6px; }
+  .mode-btn { transition: all 0.2s ease; box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important; }
+  .mode-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.35) !important; }
+  .mode-btn:active { transform: translateY(0); box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important; }
+  .coreBtn { padding: 8px 16px !important; border-radius: 6px !important; font-size: 12px !important; font-weight: 500 !important;
+    background: #1f1f2e !important; color: rgba(255,255,255,0.95) !important;
+    border: 1px solid rgba(124, 106, 247, 0.3) !important; cursor: pointer !important;
+    transition: all 0.2s ease !important; box-shadow: 0 2px 6px rgba(0,0,0,0.2) !important; }
+  .coreBtn:hover { background: #252535 !important; border-color: rgba(124, 106, 247, 0.6) !important;
+    box-shadow: 0 4px 10px rgba(124, 106, 247, 0.15) !important; }
+  .coreBtn:active { box-shadow: 0 1px 4px rgba(0,0,0,0.2) !important; }
 </style>
 </head>
 <body>
@@ -171,13 +244,36 @@
   <button id="snap-btn" title="Save high-res snapshot (PNG)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
   </button>
-  <button id="boom-btn">Dive</button>
+  <button id="rec-btn" title="Record the dive at full HD">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="7" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="10"/></svg>
+  </button>
+  <div id="rec-status">
+    <div id="rec-bar"><i></i></div>
+    <div id="rec-row"><span id="rec-text">Starting</span><button id="rec-cancel">Cancel</button></div>
+  </div>
+  <select id="rec-size" title="Recording resolution">
+    <option value="720x1544">720 &times; 1544 &mdash; fast</option>
+    <option value="1080x2314" selected>1080 &times; 2314</option>
+    <option value="1440x3086">1440 &times; 3086</option>
+    <option value="1920x1080">1920 &times; 1080</option>
+  </select>
+  <button id="boom-btn">Let's boom</button>
   <button id="pause-btn">Pause</button>
   <div id="snap-overlay">
     <img alt="High-res galaxy snapshot" />
     <div class="snap-hint">Right-click (desktop) or long-press (mobile) the image and choose
       "Save image as..." &mdash; the sandboxed webview blocks direct downloads.</div>
     <button class="snap-close">Close</button>
+  </div>
+  <div id="rec-overlay">
+    <video controls playsinline></video>
+    <div class="snap-hint">Right-click (desktop) or long-press (mobile) the video and choose
+      "Save video as..." &mdash; the sandboxed webview blocks direct downloads.</div>
+    <button class="snap-close">Close</button>
+  </div>
+  <div class="instant-row">
+    <button id="mode-normal" class="mode-btn" style="background:#7c6af7;color:#fff;">Normal (instant)</button>
+    <button id="mode-boom" class="mode-btn" style="background:rgba(255,255,255,0.14);color:rgba(255,255,255,0.85);">Boom (instant)</button>
   </div>
 </div>
 
@@ -189,8 +285,12 @@
   <div id="actions">
     <button id="reset-btn">Reset to defaults</button>
     <button id="random-btn">Randomise</button>
+    <button id="copy-btn">Copy GLSL values</button>
+    <button id="apply-btn">Apply edited values</button>
     <span id="copy-status" style="font-size:12px;color:rgba(255,255,255,0.5);"></span>
   </div>
+  <textarea id="glsl-out" spellcheck="false" autocomplete="off" autocapitalize="off"></textarea>
+  <div id="glsl-hint">Edit or paste values above, then click "Apply edited values" (or press Ctrl/Cmd+Enter while focused) to update the sliders and render.</div>
 </div>
 </div>
 
@@ -210,6 +310,7 @@ uniform float uFade;
 uniform float uRotSpeed;
 
 // Sandbox controls
+uniform float uColorTransition;
 uniform float uArmCount;
 uniform float uArmWinding;
 uniform float uArmSpacing;      // radial spacing between arm turns without
@@ -271,6 +372,7 @@ uniform float uCoreGlowSpread;  // radial REACH of the core glow with the
                                 // independent of its width). 1.0 = the
                                 // original shape, <1 hugs the core,
                                 // >1 extends outward.
+uniform float uCorona;          // tight bright bloom right at the core
 uniform float uBulge;           // stellar bulge strength; 0 = arms only
                                 // (clean starfield), 1 = full. Stars are
                                 // independent of this.
@@ -317,7 +419,12 @@ uniform float uTwinkleFraction; // 0..1: fraction of stars that twinkle
 uniform float uTwinkleSpeed;    // pulse rate, independent of rotation
 uniform float uTwinkleTime;     // wall-clock time (not the scaled iTime)
 uniform float uPxSize;          // p-space size of one screen pixel (anti-alias)
+uniform float uCoreMode; // 0.0 = black hole, 1.0 = bright white core
 uniform float uBlackHoleSize;
+uniform vec3 uCenterColor;
+uniform vec3 uArmColor;
+uniform vec3 uOuterHazeColor;   // nebula accents (corona + gas clouds)
+uniform vec3 uStarColor;
 // Normal mode's palette: same four roles as boom's, driving an exact
 // decomposition of the original grayscale formula -- with all four left at
 // the same neutral gray the output is bit-identical to the old single-tint
@@ -1044,7 +1151,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // bit. rim/coreGlow are added AFTER the mix and stay live. Uses the
     // same length(p) the CORE section feeds smoothstep, so the boundary
     // pixel lands identically. Spatially coherent branch (a disc).
-    bool inHole = length(p) <= uBlackHoleSize * 0.45;
+    bool inHole = length(p) <= uBlackHoleSize * mix(0.45, 0.85, uCoreMode);
 
     // Haze extinction during the deep dive: the smoke lingers around the
     // viewer well into the zoom (full until zoom 0.18) and only then
@@ -1066,6 +1173,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     bool bodyOn = hazeMod > 0.001 && !inHole && (uArmSmoke > 0.001 || uCoreGlow > 0.001);
     vec2 sm = bodyOn ? smokeMap(pOval, p) : vec2(0.0);
     float smoke = hazeMod * max(uArmSmoke * sm.x, uCoreGlow * sm.y);
+    // Corona: tight central bloom, its own slider. BOOM MODE ONLY, as it
+    // always was -- the dive's visible zoom runs in normal colors (the
+    // palette swap hides behind the fade), and at deep zoom this exp
+    // covers most of the screen, so adding it to normal mode washes the
+    // whole finale in bloom. Cheap single exp, computed unconditionally.
+    float corona = uCorona * hazeMod * exp(-dot(pOval, pOval) * 25.0);
     // Gas clouds: a sparse second layer of soft fog banks floating OVER
     // the disk (reference video: gauze drifting through the dark winding
     // gaps). Deliberately NOT arm-masked -- over the star-packed arms the
@@ -1276,16 +1389,22 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float rCore = length(p);    // true radius: the core itself stays round
 
     // --- COMPUTE BOOM MODE ---
-    // NORMAL-ONLY BUILD. The boom palette, uColorTransition, the corona
-    // and the white-core branch were all stripped here -- see
-    // galaxy_editor_full.html for the two-mode original, and
-    // galaxy.frag / galaxy_shader_V1.3.glsl, which remain the production
-    // truth and STILL CARRY BOTH MODES. Anything tuned here has to be
-    // ported back to those before it ships.
+    // Dual-tone spiral: the inner region takes uCenterColor and blends into
+    // uArmColor with radius, so the spiral body itself is two-toned. The
+    // corona + gas clouds are the nebula accents tinted by uOuterHazeColor.
+    // (The old soft "secondary glow" b layer -- a second smokeMap sampled
+    // in a rotated frame -- was REMOVED at the user's call after A/B'ing
+    // it with its slider; that also dropped a full smoke pass per pixel.)
     // Center tint fades out on a gaussian -- no visible edge, unlike a
     // smoothstep band which reads as a drawn circle. uCenterSpread sets
     // how far the tint reaches (weight = exp(-d^2/spread^2)).
     float centerW = exp(-(dist * dist) / (uCenterSpread * uCenterSpread));
+    vec3 spiralHue = mix(uArmColor, uCenterColor, centerW);
+    vec3 boomCol = spiralHue * (k * 0.8 + k * k * 0.2) +
+                   uStarColor * starsB;
+
+    vec3 boomLayer = clamp(boomCol, 0.0, 1.6);
+    boomLayer += corona * uOuterHazeColor;
 
     // --- COMPUTE NORMAL MODE ---
     // Exact decomposition of the original grayscale formula
@@ -1305,16 +1424,32 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // the core mix so the hole / white core still punches through, and
     // additively over the body so stars shine through the banks.
     float gasG = gas * groundVis;
+    boomLayer   += uOuterHazeColor  * gasG;
     normalLayer += uNormalHazeColor * gasG * 0.85;
 
-    // --- CORE: black hole only. No rim glow, and a wide soft edge, so
-    // surrounding haze and stars feather gently into the void. (The white
-    // core was uCoreMode = 1; with it gone, rim and coreGlow were both
-    // identically zero and are dropped outright.)
-    float coreMask = 1.0 - smoothstep(uBlackHoleSize*0.45, uBlackHoleSize*1.60, rCore);
-    normalLayer = mix(normalLayer, vec3(0.0), coreMask);
+    // --- CORE (both modes): uCoreMode 0 = black hole, 1 = bright white core
+    // Black hole has no rim glow and a wide soft edge, so surrounding haze
+    // and stars feather gently into the void; white core keeps a tight edge.
+    float edgeIn  = mix(0.45, 0.85, uCoreMode);
+    float edgeOut = mix(1.60, 1.15, uCoreMode);
+    float coreMask = 1.0 - smoothstep(uBlackHoleSize*edgeIn, uBlackHoleSize*edgeOut, rCore);
+    vec3 coreCol = mix(vec3(0.0), vec3(1.05, 1.05, 1.12), uCoreMode);
+    float rim = exp(-pow((rCore - uBlackHoleSize*1.25)/(uBlackHoleSize*0.5), 2.0));
+    // rim glow only for the white core (its halo); zero in black-hole mode
+    float rimAmt = uCoreMode * 0.30;
+    // extra bloom around the white core so it reads as glowing, not flat
+    float coreGlow = uCoreMode * exp(-dot(p,p) / (uBlackHoleSize*uBlackHoleSize) * 1.5) * 0.35;
 
-    vec3 finalCol = normalLayer;
+    normalLayer = mix(normalLayer, coreCol, coreMask);
+    normalLayer += rim * rimAmt * uNormalStarColor;
+    normalLayer += coreGlow;
+
+    boomLayer = mix(boomLayer, coreCol, coreMask);
+    boomLayer += rim * rimAmt * vec3(0.9, 0.85, 1.0);
+    boomLayer += coreGlow;
+
+    // --- MIX MODES ---
+    vec3 finalCol = mix(normalLayer, boomLayer, uColorTransition);
 
     finalCol = pow(clamp(finalCol, 0.0, 1.0), vec3(0.9));
     finalCol *= uFade;
@@ -1358,21 +1493,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
   const U = {};
-  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uBlackHoleSize','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
+  ['iTime','iResolution','uZoom','uFade','uRotSpeed','uColorTransition','uArmCount','uArmWinding','uArmSpacing','uArmFalloff','uArmSpread','uArmEdgeSkew','uRimCoarse','uArmWobble','uArmSmoke','uSmokeSkew','uCoreGlow','uCoreGlowSpread','uCorona','uBulge','uDiskThickness','uFlare','uHazePulse','uGasClouds','uOvalness','uCamTilt','uCompactness','uStarDensity','uMaxStarLod','uTwinkleFraction','uTwinkleSpeed','uTwinkleTime','uPxSize','uCoreMode','uBlackHoleSize','uCenterColor','uArmColor','uOuterHazeColor','uStarColor','uNormalCenterColor','uNormalArmColor','uNormalHazeColor','uNormalStarColor','uCenterSpread'].forEach(n => U[n] = gl.getUniformLocation(program, n));
 
   const DEFAULTS = {
     armCount: 2, armWinding: 19.5, armSpacing: 1.03, armFalloff: 0.70, armSpread: 0.69, armEdgeSkew: 1.0, rimCoarse: 0.22, armWobble: 0.19,
     armSmoke: 0.80, smokeSkew: 0.62, coreGlow: 1.0, coreGlowSpread: 0.75, corona: 0.82, gasClouds: 0.30, bulgeAmount: 1.5, diskThickness: 1.35, starFlare: 1.0, ovalness: 1.09, camTilt: 1.26, rotSpeed: 0.036,
     compactness: 1.88, starDensity: 3.68, maxStarLod: 2.0, twinkleFraction: 0.0, twinkleSpeed: 0.0,
-    blackHoleSize: 0.049, centerSpread: 0.33, zoomEase: 0.75, diveSpin: 55,
+    coreMode: 0, blackHoleSize: 0.049, centerSpread: 0.33, zoomEase: 0.75, diveSpin: 55,
+    center: [0.294, 0.376, 0.569], arm: [0.0, 0.482, 1.0], haze: [0.259, 0.345, 1.0],
+    star: [1.0, 1.0, 1.0],
     normalCenter: [0.886, 0.878, 1.0], normalArm: [0.639, 0.651, 1.0],
     normalHaze: [1.0, 1.0, 1.0], normalStar: [1.0, 1.0, 1.0]
   };
-  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase','diveSpin'];
-  const COLOR_KEYS = ['normalCenter','normalArm','normalHaze','normalStar'];
+  const KEYS = ['armCount','armWinding','armSpacing','armFalloff','armSpread','armEdgeSkew','rimCoarse','armWobble','armSmoke','smokeSkew','coreGlow','coreGlowSpread','corona','gasClouds','bulgeAmount','diskThickness','starFlare','ovalness','camTilt','rotSpeed','compactness','starDensity','maxStarLod','twinkleFraction','twinkleSpeed','blackHoleSize','centerSpread','zoomEase','diveSpin'];
+  const COLOR_KEYS = ['center','arm','haze','star','normalCenter','normalArm','normalHaze','normalStar'];
   const state = {};
   COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
   KEYS.forEach(k => state[k] = DEFAULTS[k]);
+  state.coreMode = DEFAULTS.coreMode; // toggle, not a slider
 
   const STRUCT = [
     { key: 'armCount',        label: 'Arm count',          min: 1,    max: 6,    step: 1,     fmt: v => v.toFixed(0) },
@@ -1387,6 +1525,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     { key: 'smokeSkew',       label: 'Smoke edge skew',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'coreGlow',        label: 'Haze: core glow',    min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'coreGlowSpread',  label: 'Core glow spread',   min: 0.3,  max: 2,    step: 0.01,  fmt: v => v.toFixed(2) },
+    { key: 'corona',          label: 'Haze: corona',       min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'gasClouds',       label: 'Gas clouds',         min: 0,    max: 1,    step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'bulgeAmount',     label: 'Bulge/disk stars',   min: 0,    max: 1.5,  step: 0.01,  fmt: v => v.toFixed(2) },
     { key: 'diskThickness',   label: 'Disk thickness (3D)', min: 0,   max: 10,   step: 0.05,  fmt: v => v.toFixed(2) },
@@ -1418,10 +1557,10 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // mode they edit the normal* palette, in boom mode the boom palette. Both
   // palettes persist independently, so switching modes never loses edits.
   const COLORS = [
-    { key: 'normalCenter', label: 'Center color (spiral inner tone)' },
-    { key: 'normalArm',    label: 'Arm color (spiral outer tone)' },
-    { key: 'normalHaze',   label: 'Nebula color' },
-    { key: 'normalStar',   label: 'Star color' }
+    { normalKey: 'normalCenter', boomKey: 'center', label: 'Center color (spiral inner tone)' },
+    { normalKey: 'normalArm',    boomKey: 'arm',    label: 'Arm color (spiral outer tone)' },
+    { normalKey: 'normalHaze',   boomKey: 'haze',   label: 'Nebula color' },
+    { normalKey: 'normalStar',   boomKey: 'star',   label: 'Star color' }
   ];
 
   function rgbToHex(rgb){ return '#' + rgb.map(v => Math.round(Math.min(1,v)*255).toString(16).padStart(2,'0')).join(''); }
@@ -1431,8 +1570,75 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // block) back to state keys, so the textarea can be edited or pasted
   // into and applied. Scalars are clamped to the same min/max as their
   // slider (via STRUCT); vec3 colors are clamped to [0,1].
+  const UNIFORM_TO_KEY = {
+    // Not shader uniforms -- host-side dive choreography. Listed here so
+    // the values block emits and re-parses them like everything else;
+    // sync() uploads by explicit call, so nothing tries to bind them.
+    uZoomEase: 'zoomEase', uDiveSpin: 'diveSpin',
+    uArmCount: 'armCount', uArmWinding: 'armWinding', uArmSpacing: 'armSpacing', uArmFalloff: 'armFalloff', uArmSpread: 'armSpread', uArmEdgeSkew: 'armEdgeSkew',
+    uRimCoarse: 'rimCoarse', uArmWobble: 'armWobble',
+    uArmSmoke: 'armSmoke', uSmokeSkew: 'smokeSkew', uCoreGlow: 'coreGlow', uCoreGlowSpread: 'coreGlowSpread', uCorona: 'corona',
+    uGasClouds: 'gasClouds', uBulge: 'bulgeAmount', uDiskThickness: 'diskThickness',
+    uFlare: 'starFlare', uOvalness: 'ovalness', uCamTilt: 'camTilt',
+    uRotSpeed: 'rotSpeed', uCompactness: 'compactness', uStarDensity: 'starDensity', uMaxStarLod: 'maxStarLod',
+    uTwinkleFraction: 'twinkleFraction', uTwinkleSpeed: 'twinkleSpeed',
+    uBlackHoleSize: 'blackHoleSize', uCenterSpread: 'centerSpread'
+  };
+  const VEC_UNIFORM_TO_KEY = {
+    uCenterColor: 'center', uArmColor: 'arm', uOuterHazeColor: 'haze', uStarColor: 'star',
+    uNormalCenterColor: 'normalCenter', uNormalArmColor: 'normalArm',
+    uNormalHazeColor: 'normalHaze', uNormalStarColor: 'normalStar'
+  };
+  const STRUCT_BY_KEY = {};
+  STRUCT.forEach(c => { STRUCT_BY_KEY[c.key] = c; });
+
+  // Parses a block of "uName = value;" / "uName = vec3(r, g, b);" lines
+  // (any order, extra text ignored) and applies whatever it finds to
+  // state. Returns { count, errors } for status feedback.
+  function applyGlslText(text) {
+    let count = 0;
+    const errors = [];
+
+    const scalarRe = /\b(u[A-Za-z]+)\s*=\s*([^;]+);/g;
+    let m;
+    while ((m = scalarRe.exec(text)) !== null) {
+      const name = m[1];
+      const raw = m[2].trim();
+
+      if (VEC_UNIFORM_TO_KEY[name]) {
+        const vm = raw.match(/vec3\s*\(\s*([^,]+),\s*([^,]+),\s*([^)]+)\)/);
+        if (!vm) { errors.push(name); continue; }
+        const rgb = [parseFloat(vm[1]), parseFloat(vm[2]), parseFloat(vm[3])];
+        if (rgb.some(v => !isFinite(v))) { errors.push(name); continue; }
+        state[VEC_UNIFORM_TO_KEY[name]] = rgb.map(v => Math.min(1, Math.max(0, v)));
+        count++;
+      } else if (name === 'uCoreMode') {
+        const v = parseFloat(raw);
+        if (!isFinite(v)) { errors.push(name); continue; }
+        state.coreMode = v > 0.5 ? 1 : 0;
+        count++;
+      } else if (UNIFORM_TO_KEY[name]) {
+        const key = UNIFORM_TO_KEY[name];
+        const v = parseFloat(raw);
+        if (!isFinite(v)) { errors.push(name); continue; }
+        const range = STRUCT_BY_KEY[key];
+        state[key] = range ? Math.min(range.max, Math.max(range.min, v)) : v;
+        count++;
+      }
+      // Unknown uniform names are silently ignored (forward-compatible).
+    }
+
+    return { count, errors };
+  }
+
   const structEl = document.getElementById('struct-controls');
   const colorEl = document.getElementById('color-controls');
+  const glslOut = document.getElementById('glsl-out');
+  let coreBtn; // declare at outer scope for mode button access
+
+  function updateCoreBtnLook() {
+    if (coreBtn) coreBtn.textContent = state.coreMode > 0.5 ? 'White bright core' : 'Black hole';
+  }
 
   function buildControls() {
     structEl.innerHTML = '';
@@ -1454,13 +1660,30 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       card.appendChild(row);
       structEl.appendChild(card);
     });
+    // core style toggle: black hole vs bright white core (both modes)
+    const coreCard = document.createElement('div');
+    coreCard.className = 'card';
+    const coreLabel = document.createElement('label');
+    coreLabel.textContent = 'Core style';
+    coreCard.appendChild(coreLabel);
+    coreBtn = document.createElement('button');
+    coreBtn.className = 'coreBtn';
+    coreBtn.style.width = '100%';
+    updateCoreBtnLook();
+    coreBtn.addEventListener('click', () => { state.coreMode = state.coreMode > 0.5 ? 0 : 1; updateCoreBtnLook(); sync(); });
+    coreCard.appendChild(coreBtn);
+    structEl.appendChild(coreCard);
     buildColorControls();
   }
 
+  // Rebuilt on every mode switch so the four pickers always show and edit
+  // the palette of the mode currently on screen.
   function buildColorControls() {
+    const boomActive = colorTransition > 0.5;
+    colorEl.previousElementSibling.textContent = 'Color (' + (boomActive ? 'boom' : 'normal') + ' mode)';
     colorEl.innerHTML = '';
     COLORS.forEach(c => {
-      const key = c.key;
+      const key = boomActive ? c.boomKey : c.normalKey;
       const card = document.createElement('div');
       card.className = 'card';
       const label = document.createElement('label');
@@ -1475,6 +1698,89 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   }
 
   function fmtVec(rgb){ return 'vec3(' + rgb.map(v => v.toFixed(3)).join(', ') + ')'; }
+  function glslText() {
+    return [
+      'uArmCount        = ' + state.armCount.toFixed(0) + ';',
+      'uArmWinding      = ' + state.armWinding.toFixed(1) + ';',
+      'uArmSpacing      = ' + state.armSpacing.toFixed(2) + ';',
+      'uArmFalloff      = ' + state.armFalloff.toFixed(2) + ';',
+      'uArmSpread       = ' + state.armSpread.toFixed(2) + ';',
+      'uArmEdgeSkew     = ' + state.armEdgeSkew.toFixed(2) + ';',
+      'uRimCoarse       = ' + state.rimCoarse.toFixed(2) + ';',
+      'uArmWobble       = ' + state.armWobble.toFixed(2) + ';',
+      'uArmSmoke        = ' + state.armSmoke.toFixed(2) + ';',
+      'uSmokeSkew       = ' + state.smokeSkew.toFixed(2) + ';',
+      'uCoreGlow        = ' + state.coreGlow.toFixed(2) + ';',
+      'uCoreGlowSpread  = ' + state.coreGlowSpread.toFixed(2) + ';',
+      'uCorona          = ' + state.corona.toFixed(2) + ';',
+      'uGasClouds       = ' + state.gasClouds.toFixed(2) + ';',
+      'uBulge           = ' + state.bulgeAmount.toFixed(2) + ';',
+      'uDiskThickness   = ' + state.diskThickness.toFixed(2) + ';',
+      'uFlare           = ' + state.starFlare.toFixed(2) + ';',
+      'uOvalness        = ' + state.ovalness.toFixed(2) + ';',
+      'uCamTilt         = ' + state.camTilt.toFixed(2) + ';',
+      'uRotSpeed        = ' + state.rotSpeed.toFixed(3) + ';',
+      'uCompactness     = ' + state.compactness.toFixed(2) + ';',
+      'uStarDensity     = ' + state.starDensity.toFixed(2) + ';',
+      'uMaxStarLod      = ' + state.maxStarLod.toFixed(1) + ';',
+      'uTwinkleFraction = ' + state.twinkleFraction.toFixed(2) + ';',
+      'uTwinkleSpeed    = ' + state.twinkleSpeed.toFixed(2) + ';',
+      'uCoreMode        = ' + (state.coreMode > 0.5 ? '1.0' : '0.0') + ';',
+      'uBlackHoleSize   = ' + state.blackHoleSize.toFixed(3) + ';',
+      // The two palettes are easy to mix up in this block, because the
+      // BOOM set is the unprefixed one -- the opposite of what the names
+      // suggest. Label them so it is unambiguous which is which.
+      '',
+      '// --- BOOM palette (the coloured dive state, uColorTransition = 1) ---',
+      'uCenterColor     = ' + fmtVec(state.center) + ';',
+      'uArmColor        = ' + fmtVec(state.arm) + ';',
+      'uOuterHazeColor  = ' + fmtVec(state.haze) + ';',
+      'uStarColor       = ' + fmtVec(state.star) + ';',
+      '',
+      '// --- NORMAL palette (the resting state, uColorTransition = 0) ---',
+      'uNormalCenterColor = ' + fmtVec(state.normalCenter) + ';',
+      'uNormalArmColor    = ' + fmtVec(state.normalArm) + ';',
+      'uNormalHazeColor   = ' + fmtVec(state.normalHaze) + ';',
+      'uNormalStarColor   = ' + fmtVec(state.normalStar) + ';',
+      'uCenterSpread    = ' + state.centerSpread.toFixed(2) + ';',
+      // Dive choreography. These shape the dive but are NOT shader
+      // uniforms -- the host owns them (Dart: _zoomEase / _diveSpin).
+      // They were missing from this block entirely, so a tuned dive could
+      // not be copied or handed over; the u-prefix is only there because
+      // the parser keys on it, hence the explicit header.
+      '',
+      '// --- dive choreography: HOST-SIDE constants, NOT shader uniforms ---',
+      'uZoomEase        = ' + state.zoomEase.toFixed(2) + ';',
+      'uDiveSpin        = ' + state.diveSpin.toFixed(0) + ';',
+      // Host-driven uniforms. These are NOT sliders -- the app animates
+      // them -- so they never appeared in this block, which meant anyone
+      // pasting it into another renderer had to GUESS seven inputs and
+      // guessed differently. Emitted as comments with their rest-state
+      // values: applyGlslText ignores them (they are not in
+      // UNIFORM_TO_KEY), so pasting the block back in is unaffected.
+      '',
+      '// --- host-driven, not sliders. Rest-state values shown. ---',
+      '// iResolution      = canvas size in PHYSICAL pixels (size * dpr)',
+      '// iTime            = rotation clock, NOT wall time (see below)',
+      '// uZoom            = 1.0;   // 1 = rest, ->0 = dived',
+      '// uFade            = 1.0;   // 1 = visible, 0 = black (dive fade only)',
+      '// uColorTransition = ' + (colorTransition > 0.5 ? '1.0' : '0.0') +
+        ';   // 0 = normal palette, 1 = boom. THIS BLOCK WAS COPIED IN ' +
+        (colorTransition > 0.5 ? 'BOOM' : 'NORMAL') + ' MODE',
+      '// uHazePulse       = 1.0;   // "come alive" beat, 1 = neutral',
+      // zoom is 1.0 at rest by definition -- do NOT read currentZoom here,
+      // it is declared after the first sync() call and would be in its
+      // temporal dead zone.
+      '// uPxSize          = ' + (3.3 * Math.max(1 / canvas.width,
+        1 / (canvas.height * Math.cos(state.camTilt)))).toFixed(5) +
+        ';  // 3.3*zoom*max(1/w, 1/(h*cos(tilt))) -- WORST axis, recompute on resize',
+      '//',
+      '// Authored against a ' + canvas.width + 'x' + canvas.height +
+        ' canvas (portrait ~9:19.5). The shader self-corrects for other',
+      '// aspects, so shape holds, but framing was judged at that ratio.'
+    ].join('\n');
+  }
+
   function sync() {
     gl.uniform1f(U.uArmCount, state.armCount);
     gl.uniform1f(U.uArmWinding, state.armWinding);
@@ -1488,6 +1794,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uSmokeSkew, state.smokeSkew);
     gl.uniform1f(U.uCoreGlow, state.coreGlow);
     gl.uniform1f(U.uCoreGlowSpread, state.coreGlowSpread);
+    gl.uniform1f(U.uCorona, state.corona);
     gl.uniform1f(U.uGasClouds, state.gasClouds);
     gl.uniform1f(U.uBulge, state.bulgeAmount);
     gl.uniform1f(U.uDiskThickness, state.diskThickness);
@@ -1500,7 +1807,12 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.uniform1f(U.uMaxStarLod, state.maxStarLod);
     gl.uniform1f(U.uTwinkleFraction, state.twinkleFraction);
     gl.uniform1f(U.uTwinkleSpeed, state.twinkleSpeed);
+    gl.uniform1f(U.uCoreMode, state.coreMode);
     gl.uniform1f(U.uBlackHoleSize, state.blackHoleSize);
+    gl.uniform3fv(U.uCenterColor, state.center);
+    gl.uniform3fv(U.uArmColor, state.arm);
+    gl.uniform3fv(U.uOuterHazeColor, state.haze);
+    gl.uniform3fv(U.uStarColor, state.star);
     gl.uniform3fv(U.uNormalCenterColor, state.normalCenter);
     gl.uniform3fv(U.uNormalArmColor, state.normalArm);
     gl.uniform3fv(U.uNormalHazeColor, state.normalHaze);
@@ -1511,12 +1823,21 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // one-off repaint so tweaking values against a frozen mid-dive frame
     // (the best way to A/B e.g. disk thickness) updates instantly.
     pausedDirty = true;
+    // Don't clobber the textarea while the user is actively editing it.
+    if (document.activeElement !== glslOut) glslOut.value = glslText();
   }
 
   document.getElementById('reset-btn').addEventListener('click', () => {
     COLOR_KEYS.forEach(k => state[k] = DEFAULTS[k].slice());
     KEYS.forEach(k => state[k] = DEFAULTS[k]);
+    // Core style follows the currently active mode (black hole in normal,
+    // white core in boom), not a fixed default -- resetting sliders/colors
+    // shouldn't silently flip the core away from the mode you're in.
+    state.coreMode = colorTransition > 0.5 ? 1 : 0;
+    updateCoreBtnLook();
     buildControls(); sync();
+    glslOut.blur(); // resetting is explicit intent to discard any pending edit
+    glslOut.value = glslText();
   });
   // ---- Randomise: one click = a fresh plausible galaxy. Ranges are
   // deliberately NARROWER than the sliders where the extremes stop
@@ -1567,15 +1888,72 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       state[k] = Math.round(v / step) * step;
     }
     // Palettes: one hue family per roll so the galaxy stays coherent.
-    // A pale wash tinted toward the hue; stars stay white-ish.
+    // Normal mode = pale wash tinted toward the hue; boom = the same hue
+    // saturated. Stars stay white-ish in both.
     const hue = Math.random();
     const hue2 = (hue + 0.06 + Math.random() * 0.10) % 1;   // near-neighbour
     state.normalCenter = hslToRgb(hue,  0.15 + Math.random() * 0.25, 0.88 + Math.random() * 0.08);
     state.normalArm    = hslToRgb(hue2, 0.25 + Math.random() * 0.30, 0.72 + Math.random() * 0.16);
     state.normalHaze   = hslToRgb(hue,  0.10 + Math.random() * 0.20, 0.90 + Math.random() * 0.08);
     state.normalStar   = [1, 1, 1];
+    state.center = hslToRgb(hue,  0.30 + Math.random() * 0.30, 0.40 + Math.random() * 0.20);
+    state.arm    = hslToRgb(hue2, 0.70 + Math.random() * 0.30, 0.50 + Math.random() * 0.15);
+    state.haze   = hslToRgb(hue,  0.55 + Math.random() * 0.35, 0.55 + Math.random() * 0.20);
+    state.star   = [1, 1, 1];
+    updateCoreBtnLook();
     buildControls(); sync();
+    glslOut.blur();
+    glslOut.value = glslText();
   });
+
+  document.getElementById('copy-btn').addEventListener('click', async () => {
+    const status = document.getElementById('copy-status');
+    try { await navigator.clipboard.writeText(glslText()); status.textContent = 'Copied'; }
+    catch(e) { status.textContent = 'Select block below to copy'; }
+    setTimeout(() => { status.textContent = ''; }, 2500);
+  });
+
+  function applyFromTextarea() {
+    const status = document.getElementById('copy-status');
+    const { count, errors } = applyGlslText(glslOut.value);
+    if (count === 0) {
+      status.textContent = 'No valid uName = value; lines found';
+    } else {
+      buildControls();
+      sync();
+      status.textContent = errors.length
+        ? 'Applied ' + count + ', skipped ' + errors.length + ' (' + errors.join(', ') + ')'
+        : 'Applied ' + count + ' value' + (count === 1 ? '' : 's');
+    }
+    setTimeout(() => { status.textContent = ''; }, 3500);
+  }
+  document.getElementById('apply-btn').addEventListener('click', applyFromTextarea);
+  glslOut.addEventListener('keydown', (e) => {
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); applyFromTextarea(); }
+  });
+
+  // Held true while an HD capture owns the backing store, so the observer
+  // cannot shrink the canvas back to its on-screen size mid-recording.
+  let recording = false;
+  // Capture drives a VIRTUAL clock rather than wall time. An HD backing
+  // store is 4-7x the fragment work of the on-screen size, so the shader
+  // cannot hold 60 fps there -- captured in real time that lands as a
+  // stuttering app and a choppy file. Stepping a fixed dt per drawn frame
+  // instead decouples playback from render speed: every frame is rendered
+  // and captured exactly once, so the clip is smooth at REC_FPS no matter
+  // how slow a single frame was. The cost moves to wall-clock -- a 10 s
+  // clip takes longer than 10 s to produce -- which is the right trade.
+  // frame() reads recClock in place of Date.now() while this is set, and
+  // calls recStep() after each draw.
+  const REC_FPS = 24, REC_STEP = 1000 / REC_FPS;
+  let recClock = 0, recStart = 0, recTrack = null, recStep = null;
+  // Manual frame control (captureStream(0) + track.requestFrame) is what
+  // lets a capture run on the virtual clock. Safari ships captureStream
+  // and MediaRecorder but NOT requestFrame, so there the track samples on
+  // its own wall-clock schedule and the dive has to run in real time --
+  // a slow frame is duplicated rather than waited for. recManual says
+  // which regime is live; the virtual clock applies only to the first.
+  let recManual = false;
 
   // Backing-store budget. Fullscreen on a retina display would otherwise
   // ask for clientWidth * clientHeight * 4 -- a 1440p screen at dpr 2 is
@@ -1588,6 +1966,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   const MAX_BACKING_PX = 2200000;
 
   function resize() {
+    if (recording) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     let w = Math.round(canvas.clientWidth * dpr), h = Math.round(canvas.clientHeight * dpr);
     if (w * h > MAX_BACKING_PX) {
@@ -1649,9 +2028,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   (() => {
     const phone = document.getElementById('phone');
     const fsBtn = document.getElementById('fs-btn');
-    // The fallback notice reuses the actions-row status span (the
-    // recorder's own status panel went with the recorder).
-    const noteText = document.getElementById('copy-status');
+    const note = document.getElementById('rec-status');
+    const noteText = document.getElementById('rec-text');
     const EXPAND = '<path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/>';
     const SHRINK = '<path d="M3 8h3a2 2 0 0 0 2-2V3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M21 16h-3a2 2 0 0 0-2 2v3"/>';
 
@@ -1665,8 +2043,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       phone.classList.add('fs-fake');
       document.body.style.overflow = 'hidden';
       if (why) {
+        note.classList.add('on');
         noteText.textContent = why;
-        setTimeout(() => { noteText.textContent = ''; }, 3500);
+        setTimeout(() => { if (!recording) note.classList.remove('on'); }, 3500);
       }
       onFsChange();
     }
@@ -1724,6 +2103,186 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     document.addEventListener('webkitfullscreenchange', onFsChange);
   })();
 
+  // HD dive capture. Screen-recording the phone frame yields whatever the
+  // frame happens to be scaled to on screen (~390 px wide), which is why
+  // shared clips look soft. captureStream() records the canvas BACKING
+  // STORE, not the CSS box -- so enlarging the backing store to a real HD
+  // size and leaving the frame to display it scaled down gives a
+  // full-resolution file with no screen recorder, no window cropping and
+  // no compositor scaling. Same trick as the snapshot button, held across
+  // the whole dive instead of a single frame. frame() re-reads
+  // gl.canvas.width/height every pass for iResolution and uPxSize, so the
+  // star anti-aliasing is computed FOR the capture density -- a true
+  // re-render at size, not an upscale. The buttons are DOM siblings of the
+  // canvas, so none of them appear in the recording.
+  // 1080x2314 and 1440x3086 are the 392x840 authoring aspect (~9:19.3);
+  // 1920x1080 leans on the shader's own aspect correction, so the galaxy
+  // keeps its shape but sits in a wider frame than it was judged at.
+  (() => {
+    const recBtn = document.getElementById('rec-btn');
+    const recStatus = document.getElementById('rec-status');
+    const recFill = document.querySelector('#rec-bar > i');
+    const recText = document.getElementById('rec-text');
+    const recCancel = document.getElementById('rec-cancel');
+    const recSize = document.getElementById('rec-size');
+    const overlay = document.getElementById('rec-overlay');
+    const video = overlay.querySelector('video');
+    const close = () => {
+      overlay.classList.remove('open');
+      video.pause();
+      if (video.src) { URL.revokeObjectURL(video.src); video.removeAttribute('src'); video.load(); }
+    };
+    overlay.querySelector('.snap-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    // PULSE 1000 + zoom 4000 + hold 1000, per frame()'s dive branch;
+    // plus a second at rest to open on and a beat to land on.
+    // These are CLIP milliseconds, measured on the virtual clock.
+    const LEAD = 1000, DIVE = 6000, TAIL = 800;
+    const TOTAL = LEAD + DIVE + TAIL;
+    const FRAMES = Math.round(TOTAL / REC_STEP);
+
+    let active = null;   // { rec, stream, oldW, oldH, cancelled }
+
+    function finish() {
+      const a = active;
+      if (!a) return;
+      if (a.rec && a.rec.state !== 'inactive') { a.rec.stop(); return; }  // onstop re-enters
+      a.stream.getTracks().forEach(t => t.stop());
+      canvas.width = a.oldW; canvas.height = a.oldH;
+      gl.viewport(0, 0, a.oldW, a.oldH);
+      recording = false; recStep = null; recTrack = null; recManual = false;
+      active = null;
+      recBtn.disabled = false;
+      recStatus.classList.remove('on');
+    }
+    recCancel.addEventListener('click', () => { if (active) { active.cancelled = true; finish(); } });
+
+    recBtn.addEventListener('click', () => {
+      if (recording) return;
+      if (typeof MediaRecorder === 'undefined' || !canvas.captureStream) {
+        recStatus.classList.add('on');
+        recText.textContent = 'Recording unsupported in this browser';
+        setTimeout(() => recStatus.classList.remove('on'), 3000);
+        return;
+      }
+      btnNormal.click();   // the dive runs normal -> boom, so start at rest
+
+      const [w, h] = recSize.value.split('x').map(Number);
+      const oldW = canvas.width, oldH = canvas.height;
+      let stream = null;
+
+      // Build the pipeline BEFORE committing any state: if any of this
+      // throws, the editor must be left exactly as it was. The earlier cut
+      // set recording = true up front, so a failure here froze the render
+      // loop with no way back.
+      try {
+        canvas.width = w; canvas.height = h;
+        gl.viewport(0, 0, w, h);
+        // Prefer manual mode; fall back to automatic sampling on browsers
+        // (Safari) that have no requestFrame. Automatic still records --
+        // it just cannot outrun the GPU, so it is real time and may
+        // duplicate frames at high resolution.
+        let track = null;
+        try {
+          stream = canvas.captureStream(0);
+          track = stream.getVideoTracks()[0];
+          if (!track || typeof track.requestFrame !== 'function') throw new Error('no requestFrame');
+          recManual = true;
+        } catch (e) {
+          if (stream) stream.getTracks().forEach(t => t.stop());
+          stream = canvas.captureStream(REC_FPS);
+          track = stream.getVideoTracks()[0];
+          if (!track) throw new Error('canvas capture unavailable');
+          recManual = false;
+        }
+        // avc1 first where hardware-backed; then vp8, which encodes a lot
+        // faster than vp9 and is plenty for stars on black.
+        const mime = ['video/mp4;codecs=avc1', 'video/webm;codecs=vp8',
+                      'video/webm;codecs=vp9', 'video/webm']
+                     .find(t => MediaRecorder.isTypeSupported(t)) || '';
+        const rec = new MediaRecorder(stream,
+          mime ? { mimeType: mime, videoBitsPerSecond: 16000000 } : undefined);
+        const chunks = [];
+        rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+        rec.onstop = () => {
+          const a = active;
+          const cancelled = a && a.cancelled;
+          finish();
+          if (cancelled) return;
+          const blob = new Blob(chunks, { type: (mime.split(';')[0] || 'video/webm') });
+          if (!blob.size) return;
+          const url = URL.createObjectURL(blob);
+          const ext = blob.type.indexOf('mp4') >= 0 ? 'mp4' : 'webm';
+          // Direct save works standalone; the sandboxed artifact webview
+          // blocks it, so the overlay is the path that always works.
+          const dl = document.createElement('a');
+          dl.href = url;
+          dl.download = 'galaxy_dive_' + w + 'x' + h + '.' + ext;
+          dl.click();
+          video.src = url;
+          overlay.classList.add('open');
+        };
+
+        active = { rec, stream, oldW, oldH, cancelled: false };
+        recTrack = recManual ? track : null;
+        recording = true;
+        recClock = recStart = Date.now();
+        const wall0 = Date.now();
+        let n = 0, dived = false;
+
+        // Called from frame() right after each draw.
+        recStep = recManual
+          // Manual: one drawn frame = one captured frame = one fixed clock
+          // step, so the clip is smooth at REC_FPS however long the draw
+          // took. Progress is frames done, and the ETA is real seconds.
+          ? () => {
+              if (recTrack) recTrack.requestFrame();
+              recClock += REC_STEP;
+              n++;
+              const el = recClock - recStart;
+              const secs = (Date.now() - wall0) / 1000;
+              const eta = n > 4 ? Math.round(secs / n * (FRAMES - n)) : null;
+              recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
+              recText.textContent = 'Rendering ' + Math.min(n, FRAMES) + '/' + FRAMES + ' frames'
+                + (eta !== null ? '  ~' + eta + 's left' : '');
+              if (!dived && el >= LEAD) { dived = true; startDive(); }
+              if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
+            }
+          // Automatic: the track samples itself, so the dive must play at
+          // real speed and the clip is done when the wall clock says so.
+          // Progress is elapsed time; there is nothing to wait for.
+          : () => {
+              const el = Date.now() - wall0;
+              recFill.style.width = Math.min(100, el / TOTAL * 100) + '%';
+              recText.textContent = 'Recording live  ' + (Math.max(0, TOTAL - el) / 1000).toFixed(1) + 's left';
+              if (!dived && el >= LEAD) { dived = true; startDive(); }
+              if (el >= TOTAL) { recStep = null; if (rec.state !== 'inactive') rec.stop(); }
+            };
+
+        recBtn.disabled = true;
+        recFill.style.width = '0%';
+        recText.textContent = recManual ? 'Rendering 0/' + FRAMES + ' frames' : 'Recording live';
+        recStatus.classList.add('on');
+        rec.start();
+      } catch (err) {
+        if (stream) stream.getTracks().forEach(t => t.stop());
+        canvas.width = oldW; canvas.height = oldH;
+        gl.viewport(0, 0, oldW, oldH);
+        recording = false; recStep = null; recTrack = null; active = null;
+        recBtn.disabled = false;
+        recStatus.classList.add('on');
+        recText.textContent = 'Could not start: ' + err.message;
+        console.error('capture failed', err);
+        setTimeout(() => recStatus.classList.remove('on'), 4000);
+      }
+    });
+  })();
+
+  // colorTransition: 0 = normal, 1 = boom (continuous mix in this shader).
+  // Declared before buildControls() -- the color pickers read it to decide
+  // which mode's palette they bind to.
+  let colorTransition = 0.0;
   // Set by sync(); consumed by the paused branch of frame() to repaint the
   // frozen frame once after any control change.
   let pausedDirty = false;
@@ -1749,6 +2308,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
   const boomBtn = document.getElementById('boom-btn');
   const pauseBtn = document.getElementById('pause-btn');
+  const btnNormal = document.getElementById('mode-normal');
+  const btnBoom = document.getElementById('mode-boom');
 
   function togglePause() {
     if (!isZooming) return;
@@ -1769,20 +2330,62 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   }
   pauseBtn.addEventListener('click', togglePause);
 
-  // Plays the dive. Normal-only build: the view comes back exactly as it
-  // left, and there is no mode to switch.
+  function setBoomBtnLook(isBoom) {
+    boomBtn.textContent = isBoom ? 'Reset' : "Let's boom";
+    boomBtn.style.background = isBoom ? '#d946ef' : '#7c6af7';
+  }
+  function setInstantLook(isBoom) {
+    btnNormal.style.background = isBoom ? 'rgba(255,255,255,0.14)' : '#7c6af7';
+    btnNormal.style.color = isBoom ? 'rgba(255,255,255,0.85)' : '#fff';
+    btnBoom.style.background = isBoom ? '#7c6af7' : 'rgba(255,255,255,0.14)';
+    btnBoom.style.color = isBoom ? '#fff' : 'rgba(255,255,255,0.85)';
+  }
+
+  // Plays the dive. It no longer carries a target mode -- the view comes
+  // back exactly as it left -- so mode switching lives only in the
+  // Normal/Boom buttons.
   function startDive() {
     if (isZooming) return;
     isZooming = true;
-    zoomStartTime = Date.now();
+    zoomStartTime = (recording && recManual && recStep) ? recClock : Date.now();
     boomBtn.disabled = true;
     boomBtn.style.opacity = '0';
     boomBtn.style.pointerEvents = 'none';
+    // btnNormal/btnBoom stay enabled during the dive so they can abort +
+    // jump straight to their target state, for quick iteration/testing.
     pauseBtn.style.display = 'block';
     pauseBtn.textContent = 'Pause';
   }
 
+  // Instant buttons abort any in-progress (or paused) dive and jump
+  // straight to the target end-state, for quick iteration/testing.
+  function abortZoom() {
+    isZooming = false;
+    isPaused = false;
+    boomBtn.disabled = false;
+    boomBtn.style.pointerEvents = 'auto';
+    boomBtn.style.opacity = '1';
+    btnNormal.disabled = false;
+    btnBoom.disabled = false;
+    pauseBtn.style.display = 'none';
+  }
+
   boomBtn.addEventListener('click', () => startDive());
+  btnNormal.addEventListener('click', () => {
+    abortZoom();
+    colorTransition = 0.0; currentZoom = 1.0; currentFade = 1.0;
+    state.coreMode = 0; // black hole for normal mode
+    updateCoreBtnLook(); buildColorControls(); sync();
+    setBoomBtnLook(false); setInstantLook(false);
+  });
+  btnBoom.addEventListener('click', () => {
+    abortZoom();
+    colorTransition = 1.0; currentZoom = 1.0; currentFade = 1.0;
+    state.coreMode = 1; // white bright core for boom mode
+    updateCoreBtnLook(); buildColorControls(); sync();
+    setBoomBtnLook(true); setInstantLook(true);
+  });
+
   function frame() {
     if (isPaused) {
       // Frozen frame: no clocks advance, but if a control changed (sync
@@ -1796,7 +2399,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       requestAnimationFrame(frame);
       return;
     }
-    const now = Date.now();
+    // recStep is what advances recClock, so fall back to wall time if it
+    // is ever missing -- otherwise `now` would freeze and so would the
+    // whole render loop, with no way for the user to recover. Real-time
+    // captures stay on wall time throughout.
+    const now = (recording && recManual && recStep) ? recClock : Date.now();
     const delta = (now - lastFrame) / 1000.0;
     lastFrame = now;
     twinkleTime += delta; // always real-time, regardless of dive/rotation
@@ -1880,6 +2487,8 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         boomBtn.disabled = false;
         boomBtn.style.pointerEvents = 'auto';
         boomBtn.style.opacity = '1';
+        btnNormal.disabled = false;
+        btnBoom.disabled = false;
         pauseBtn.style.display = 'none';
         isPaused = false;
       }
@@ -1924,10 +2533,13 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
       1.0 / (gl.canvas.height * Math.cos(currentTilt))
     );
     gl.uniform1f(U.uPxSize, pxSize);
+    gl.uniform1f(U.uColorTransition, colorTransition);
     gl.uniform1f(U.uZoom, currentZoom);
     gl.uniform1f(U.uFade, currentFade);
     gl.uniform2f(U.iResolution, gl.canvas.width, gl.canvas.height);
     gl.drawArrays(gl.TRIANGLES, 0, 6);
+    // Capture this exact frame, then advance the virtual clock one step.
+    if (recording && recStep) recStep();
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);
