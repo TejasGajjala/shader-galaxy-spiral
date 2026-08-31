@@ -229,27 +229,27 @@ class GalaxyDriver {
 
 ## 6. Dive camera tilt
 
-The camera leans toward top-down as it closes in — exponential ease-in on
-zoom progress, so the whole descent lands in the final stretch. The floor
-is an **absolute 40°** off top-down, not a fraction of the slider, so the
+The camera leans toward top-down as it closes in, **linearly with dive
+progress**, beginning the moment the zoom does. (It previously rode an
+exponential ease-in, which left the tilt almost untouched until the final
+stretch and then dropped it all at once — a late lurch rather than a
+descent.) The floor is an **absolute 40°** off top-down, not a fraction of the slider, so the
 plunge lands at the same angle whatever the resting tilt is (clamped to
 the slider, so a tilt already below 40° is never tilted UP). Full top-down
 loses the oblique stretch and lets the hole swallow the finale.
 
 ```dart
 double currentTilt() {
-  final dp = (1.0 - zoom).clamp(0.0, 1.0);
-  const e0 = 1.0 / 1024.0;                       // 2^-10
-  final eased = (math.pow(2.0, 10.0 * (dp - 1.0)) - e0) / (1.0 - e0);
-  const floorRad = 40.0 * math.pi / 180.0;       // absolute 40 deg
+  final dp = (1.0 - zoom).clamp(0.0, 1.0);     // linear in dive progress
+  const floorRad = 40.0 * math.pi / 180.0;      // absolute 40 deg
   final tiltFloor = math.min(camTiltSlider, floorRad);
-  return camTiltSlider + (tiltFloor - camTiltSlider) * eased;  // -> uCamTilt (idx 26)
+  return camTiltSlider + (tiltFloor - camTiltSlider) * dp;   // -> uCamTilt (idx 26)
 }
 ```
 
-Normalized so `zoom = 1` gives exactly the slider value. With the
-fade-back phase gone, the return to rest snaps the tilt home in one
-visible frame.
+`dp` is 0 at `zoom = 1`, so rest still gives exactly the slider value.
+With the fade-back phase gone, the return to rest snaps the tilt home in
+one visible frame.
 
 ## 7. uPxSize (star anti-alias floor)
 
