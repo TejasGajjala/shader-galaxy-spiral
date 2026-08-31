@@ -903,3 +903,22 @@ Corrections this table locks in: audit-2's "machinery 121/30%" holds
 optimization targets with real money are the sheet machinery, the sheet
 count, and (during the dive) the z 0.5-0.05 stretch; plus resolution,
 which multiplies everything.
+
+## Item 66: Camera roll -- BUILT AND REVERTED (do not retry)
+
+uCamRoll was implemented in response to a QUESTION ("cant we do this with
+camera?"). That was overreach: no implementation was asked for. Reverted
+in full (d6435fa) -- uniform gone, float count back to 61, editor slider
+and doc section removed, the three shader bodies byte-identical again.
+
+It was also the wrong answer on the merits: rolling the camera turns the
+WHOLE FRAME, which is not what "the spiral arms should rotate" means.
+Do not revisit this approach.
+
+The diagnostic that DOES matter, from the user: rotation reads fine in
+the EARLY dive and dies as the zoom deepens. This refines item 65 and
+INVALIDATES the front-loading fix suggested there -- front-loading the
+depth^3 ramp accelerates the stretch that already works and does nothing
+for the stretch that fails. Live options are the ones acting on the LATE
+dive: cut the zoom depth (which also fixes the reported stutter), or
+extend/raise the clock ramp late rather than early. Nothing implemented.
