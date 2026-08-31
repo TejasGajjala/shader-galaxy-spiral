@@ -89,6 +89,7 @@
      drives #boom-btn's opacity through an inline style, which would
      otherwise outrank these. */
   #phone.fs-idle #fs-btn,
+  #phone.fs-idle #snap-btn,
   #phone.fs-idle #boom-btn,
   #phone.fs-idle #pause-btn,
   #phone.fs-idle #pause-btn {
@@ -98,6 +99,18 @@
     transition: opacity 0.35s ease;
   }
 
+  #snap-btn {
+    position: absolute; top: 14px; right: 14px; z-index: 5;
+    width: 38px; height: 38px; border-radius: 50%; border: none;
+    cursor: pointer; padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    background: rgba(20, 22, 40, 0.55); color: rgba(255, 255, 255, 0.8);
+  }
+  #snap-btn:hover { background: rgba(124, 106, 247, 0.55); color: #fff; }
+  #snap-btn svg { width: 20px; height: 20px; }
+  /* Snapshot overlay: the sandboxed artifact webview blocks anchor
+     downloads, so the high-res render is shown in-page instead and saved
+     via the browser's own "Save image as..." (needs no permission). */
   #pause-btn {
     position: absolute; left: 50%; bottom: 70px; transform: translateX(-50%);
     padding: 9px 24px; border-radius: 6px; background: #2a2a3e;
@@ -141,8 +154,17 @@
   <button id="fs-btn" title="Fullscreen (Esc to exit)">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></svg>
   </button>
+  <button id="snap-btn" title="Save high-res snapshot (PNG)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+  </button>
   <button id="boom-btn">Dive</button>
   <button id="pause-btn">Pause</button>
+  <div id="snap-overlay">
+    <img alt="High-res galaxy snapshot" />
+    <div class="snap-hint">Right-click (desktop) or long-press (mobile) the image and choose
+      "Save image as..." &mdash; the sandboxed webview blocks direct downloads.</div>
+    <button class="snap-close">Close</button>
+  </div>
 </div>
 
 <div id="panel">
@@ -1142,19 +1164,23 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // an independent fuzz saturating at thickness 1) could not get
         // there: through the 1-3 range it resolved to 2-3 sheets whose
         // spacing dwarfed the fuzz, so every arm still read as parallel
-        // paths. nSheet ~ 2T keeps the sheet pitch within ~2 star spacings
-        // wherever the sub-cell clamp truncates the residuals (far field,
-        // deep LOD), which is too fine for the eye to group into rows; the
-        // hEnv rim taper shrinks pitch and residuals together, staying
-        // coherent. Population split is untouched: each sheet carries 1/N
-        // of the SAME field -- repartitioned, never duplicated -- so the
-        // star count is conserved exactly. Cost scales with the slider:
-        // the 1.35 default runs 3 sheets (was 2), thickness 3 runs 6, the
-        // cap is 8. uDiskThickness is a uniform, so N is identical for
+        // paths. nSheet ~ 2T - 1 keeps the sheet pitch fine enough wherever
+        // the sub-cell clamp truncates the residuals (far field, deep LOD)
+        // that the eye cannot group it into rows; the hEnv rim taper
+        // shrinks pitch and residuals together, staying coherent.
+        // Population split is untouched: each sheet carries 1/N of the
+        // SAME field -- repartitioned, never duplicated -- so the star
+        // count is conserved exactly, and the SLAB HEIGHT is set by
+        // uDiskThickness alone, not by N. The count was briefly 2T, which
+        // put 3 sheets at the 1.35 default; measured against 2 sheets at
+        // 1.32 Mpx that third sheet was invisible at rest at both 1.35 and
+        // 3.0 while costing ~17% of the frame, so it was margin against
+        // the sub-cell clamp rather than something the eye needed. Now
+        // 1.35 runs 2 sheets, thickness 3 runs 5, the cap is 8. uDiskThickness is a uniform, so N is identical for
         // every pixel and the break stays fully coherent. Constant bound +
         // break because the editor targets GLSL ES 1.00 (WebGL1), which
         // forbids a non-constant loop bound; 8 caps the unrolled size.
-        int   nSheet = int(clamp(ceil(uDiskThickness * 2.0), 2.0, 8.0));
+        int   nSheet = int(clamp(ceil(uDiskThickness * 2.0 - 1.0), 2.0, 8.0));
         float invN   = 1.0 / float(nSheet);
         // Residual half-range per population: half of one slice, in the
         // population's own height units, so residuals meet exactly at the
@@ -1720,6 +1746,47 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   }
   new ResizeObserver(resize).observe(canvas);
   resize();
+
+  // High-res snapshot: re-render ONE frame into an upscaled backing store
+  // (up to 4096 px on the long side), save it, and restore the live size
+  // within the same task. Reuses the existing context and whatever the
+  // uniforms currently hold, so it captures rest, paused, or mid-dive
+  // frames alike; iResolution and uPxSize are re-uploaded for the big
+  // frame so star anti-aliasing is computed FOR that pixel density (a
+  // plain canvas upscale would blur -- this is a true re-render).
+  // toDataURL is synchronous, so no preserveDrawingBuffer needed and the
+  // restore can't race the encode.
+  document.getElementById('snap-btn').addEventListener('click', () => {
+    const oldW = canvas.width, oldH = canvas.height;
+    const scale = Math.min(3, 4096 / Math.max(oldW, oldH));
+    const w = Math.round(oldW * scale), h = Math.round(oldH * scale);
+    canvas.width = w; canvas.height = h;
+    gl.viewport(0, 0, w, h);
+    gl.uniform2f(U.iResolution, w, h);
+    gl.uniform1f(U.uPxSize, 3.3 * currentZoom * Math.max(1 / w, 1 / (h * Math.cos(currentTilt))));
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    const url = canvas.toDataURL('image/png');
+    canvas.width = oldW; canvas.height = oldH;
+    gl.viewport(0, 0, oldW, oldH);
+    gl.uniform2f(U.iResolution, oldW, oldH);
+    pausedDirty = true; // repaint the frozen frame if paused
+    // Best-effort direct download -- works when the page runs standalone;
+    // the sandboxed artifact webview silently blocks it, so the overlay
+    // below is the path that always works (browser-native image save).
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'galaxy_' + w + 'x' + h + '_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
+    a.click();
+    const overlay = document.getElementById('snap-overlay');
+    overlay.querySelector('img').src = url;
+    overlay.classList.add('open');
+  });
+  (() => {
+    const overlay = document.getElementById('snap-overlay');
+    const close = () => { overlay.classList.remove('open'); overlay.querySelector('img').src = ''; };
+    overlay.querySelector('.snap-close').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  })();
 
   // Fullscreen presentation. The phone frame is the authoring context, not
   // the deliverable -- for a screen recording it just bakes a bezel and a

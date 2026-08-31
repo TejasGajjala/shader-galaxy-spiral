@@ -1062,3 +1062,42 @@ re-render-at-4096 handler): fullscreen plus an OS screen grab covers it.
 Verified: 49-line block, no boom identifiers present, round-trip edits
 (uDiskThickness 2.50, uNormalArmColor vec3(0.2,0.9,0.4)) apply 32 values
 and re-emit correctly, no console errors.
+
+## Item 72: Sheet count 2T -> 2T-1 (the third sheet at 1.35 was margin)
+
+uDiskThickness itself is UNCHANGED at 1.35 -- this is purely how many
+height passes the renderer uses to fill that same slab. nSheet is internal
+and never exposed; the slab height comes from uDiskThickness alone.
+
+  nSheet = clamp(ceil(2T),     2, 8)   ->   clamp(ceil(2T - 1), 2, 8)
+
+At 1.35 that is 3 sheets -> 2; T=2 gives 3, T=3 gives 5, cap still 8.
+
+Evidence: rendered 3-sheet vs 2-sheet at 1.32 Mpx (4x the earlier
+comparison) at T=1.35 and T=3.0 -- indistinguishable at both, every
+winding still one fuzzy band, no parallel paths, no dark seam. Star count
+is conserved by construction (each sheet carries 1/N of the same field),
+so density and brightness are untouched. Saves ~17% of the rest frame
+(479 -> 399 ms measured pre-trim).
+
+Why the rest frame is the WORST case for this artifact, so no separate
+dive gate was needed: sheets separate by 2*h*parVec, and parVec grows
+with tilt (its .y term is ~st/ct). The dive DROPS tilt 72 -> 40 deg, which
+shrinks parVec, so sheet separation is largest at rest. A mid-dive freeze
+at uZoom 0.17 confirmed no banding. (The two dive captures landed at
+different depths -- SwiftShader fits ~6 frames in the whole dive -- so
+they are not a strict A/B; the tilt argument is what carries it.)
+
+Applied to all four files: both editors and both production shaders. The
+editor/production shader split from item 70 means these no longer track
+each other automatically -- the shader bodies were re-verified
+byte-identical across galaxy.frag, the .glsl and the editor after the
+edit.
+
+## Item 73: Screenshot button restored
+
+Removed in item 71 on the reading that fullscreen + an OS grab covered
+it; the user wanted it back. Restored from the archive intact -- CSS,
+button, overlay, the fs-idle selector, and the re-render-at-4096 handler.
+Verified: clicking it produces a data:image/png, opens the overlay, and
+restores the canvas to 392x840.
