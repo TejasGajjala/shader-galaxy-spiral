@@ -1004,7 +1004,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // the floater strays stay detached by design.
         float hEnv   = 1.0 - 0.85 * smoothstep(1.0, 1.5, length(pOval));
         float hDisk  = uDiskThickness * 0.008 * hEnv;  // arm slab half-height
-        float hBulge = uDiskThickness * 0.025;  // bulge spheroid half-height
         // Sheets tile the slab in CONTIGUOUS slices, and every star sits
         // at a continuous height inside its slice: the partition hash both
         // deals the star to a sheet and, rescaled within the sheet's
@@ -1037,7 +1036,6 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // population's own height units, so residuals meet exactly at the
         // slice boundaries -- no gap, no overlap.
         float residArm   = hDisk * invN;
-        float residBulge = hBulge * invN;
         // Arm envelope, computed ONCE at the mid-plane and shared by every
         // sheet. Each sheet used to rebuild the whole thing at its own
         // footprint -- armAngleMask (with its wobble noise tap),
@@ -1067,19 +1065,24 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
             // Only the LATTICE frame is per-sheet; the arm envelope
             // (aMask, armStarKeep) is shared -- see armMask/armKeep above.
             vec2 aRot = rotate(pBg - parVec * (t * hDisk), ang);
-            if (armMask > 0.0005) {
+            // ONE lattice walk serves both populations. starField already
+            // returns vec2(.x = full field, .y = keep subset) from a single
+            // 3x3 pass; the arm and bulge could not share it before only
+            // because they sat at different heights (hBulge was 3x hDisk),
+            // which meant two walks per sheet. Putting the bulge on the
+            // arm's frame halves the loop. The trade is real and visible:
+            // the bulge is no longer a puffier spheroid than the disk, it
+            // sits in the same slab, so the core loses some of its depth.
+            // Gaussian falloff still drives its PRESENCE -- near-flat over
+            // the core, collapsing hard with radius -- and 0.8x keeps the
+            // arms dominant.
+            float bKeep = min(uBulge * 2.4 * exp(-dot(aRot, aRot) * 7.0), 1.0);
+            if (armMask > 0.0005 || bKeep > 0.003) {
                 // wantAll = 1 with the arm-thinning roll on .x: at
                 // armStarKeep = 1 this is the exact old keep=1 field.
-                starsV = max(starsV, armMask * starField(aRot, 0.0, parRot, lo, hi, ang, pxCtl, 1.0, armKeep, residArm).x * 1.5);
-            }
-            // Bulge sheet: gaussian falloff drives PRESENCE at the sheet
-            // footprint -- near-flat over the core, collapsing hard with
-            // radius so the diffuse scatter stays concentrated instead of
-            // trailing far outside the disk; 0.8x keeps arms dominant.
-            vec2 bRot = rotate(pBg - parVec * (t * hBulge), ang);
-            float bKeep = min(uBulge * 2.4 * exp(-dot(bRot, bRot) * 7.0), 1.0);
-            if (bKeep > 0.003) {
-                starsV = max(starsV, starField(bRot, bKeep, parRot, lo, hi, ang, pxCtl, 0.0, 1.0, residBulge).y * 1.5 * 0.8);
+                vec2 sf = starField(aRot, bKeep, parRot, lo, hi, ang, pxCtl, 1.0, armKeep, residArm);
+                if (armMask > 0.0005) starsV = max(starsV, armMask * sf.x * 1.5);
+                if (bKeep > 0.003)    starsV = max(starsV, sf.y * 1.5 * 0.8);
             }
         }
         // Floater sheets: sparse chunky strays at the largest heights --
