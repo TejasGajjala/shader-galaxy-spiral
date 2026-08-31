@@ -172,9 +172,9 @@ class GalaxyDriver {
   static const _zoomEase = 0.75; // ease-in-out strength; 0 = linear zoom
   // Peak rotation multiplier at the core; the dive always starts at 5x and
   // rides depth^3 up to this. 20 = the original fixed 5*(1+3*depth^3).
-  // ~55 keeps tangential motion comparable to the radial rush through
+  // ~50 keeps tangential motion comparable to the radial rush through
   // zoom 0.25-0.05, the band that otherwise reads as stationary.
-  static const _diveSpin = 55.0;
+  static const _diveSpin = 50.0;
   static double _ss(double x) { x = x.clamp(0.0, 1.0); return x * x * (3 - 2 * x); }
 
   /// Plays the dive. It carries no target mode: the view comes back as it
