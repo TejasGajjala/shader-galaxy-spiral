@@ -1149,3 +1149,35 @@ the two populations at different heights.
 The item-74 optimisations (redundant sqrt, integer pow, shared arm
 envelope) are unaffected and remain in place -- verified present after the
 revert, and the core crop matches the pre-merge reference.
+
+## Item 76: Shared arm envelope REVERTED -- it broke arm thickness
+
+User: "this thickness is not working as expected anymore. The arms stay as
+it is. Only the bulge is spreading."
+
+Correct, and item 74's third optimisation caused it. My justification there
+was wrong. I argued the 3D comes from each sheet's LATTICE frame so the
+envelope could be hoisted to the mid-plane -- but the MASK POSITION IS
+ITSELF A CARRIER OF THICKNESS. A sheet's arm band appears shifted on screen
+because its mask is evaluated at the shifted footprint; pinning the mask to
+the mid-plane froze the band, so only stars inside a FIXED band could move
+and the arm silhouette stopped thickening with the slider. The bulge kept
+its own per-sheet footprint (bRot) and went on spreading -- exactly the
+asymmetry reported.
+
+Verified at uDiskThickness = 6 with uBulge = 0 to isolate the arms: the
+shared-mask build keeps thin crisp bands, the reverted build puffs them
+into a real slab.
+
+Items 1 and 2 from that commit are KEPT (redundant sqrt; integer-exponent
+pow -> multiplies). Both are exact and touch no geometry.
+
+RULE: the arm envelope must be evaluated PER SHEET at that sheet's own
+footprint. It is not redundant work -- it is what gives the arm slab its
+height. Do not hoist it. Together with item 75's rule (the bulge must keep
+its own 3x height), the sheet loop is now at its floor: the two
+populations need separate footprints AND separate envelopes.
+
+Net after both reverts: 396 -> ~390 ms, roughly 1-2%. The honest total from
+this optimisation pass is small, because the two large wins both turned out
+to be paying for appearance.
