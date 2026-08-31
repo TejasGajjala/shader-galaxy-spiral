@@ -985,26 +985,3 @@ values), sliders followed, block re-emitted the new values.
 Rule going forward: any tuning value a user can change MUST appear in the
 values block. "It's host-side" is not a reason to hide it -- the block is
 a settings handover, not a uniform dump.
-
-## Item 69: Dive tilt is linear from the start (was easeInExpo)
-
-The tilt descent rode an easeInExpo on dive progress, which held it
-essentially still for most of the dive and dropped the whole 32 deg in
-the last stretch -- a late lurch rather than a descent. Now linear in
-dp = 1 - zoom, so it starts the moment the zoom does:
-
-  currentTilt = camTilt + (tiltFloor - camTilt) * dp     // was * eased
-
-Measured (default camTilt 72.2 deg, floor 40 deg):
-
-  zoom   before -> after
-  0.93    72.2     70.3
-  0.76    72.0     64.8
-  0.47    71.0     54.3
-  0.14    59.6      ~44
-  0.00    40.0     40.0
-
-Endpoints are unchanged: dp = 0 at rest gives exactly the slider value,
-and the floor is still an absolute 40 deg clamped to the slider. Only the
-distribution changed. The E0 = 2^-10 normalisation constant is gone with
-the curve.

@@ -2492,24 +2492,23 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // zoom reads as diving INTO the galaxy rather than magnifying the
     // same oblique picture. Exponential ease-in on zoom progress: the
     // view is essentially untouched through the early and mid dive, and
-    // the descent runs LINEARLY with dive progress, starting the moment
-    // the zoom does. It used to ride an easeInExpo, which held the tilt
-    // almost untouched until the final stretch and then dropped it all at
-    // once; spreading it evenly makes the lean-in read as a continuous
-    // descent rather than a late lurch. The floor is an ABSOLUTE 40 deg
-    // off top-down, not a fraction of the slider, so the plunge always
-    // lands at the same angle whatever the resting tilt is. Clamped to
-    // the slider so a resting tilt already shallower than 40 deg is never
-    // tilted UP by the dive. Fully top-down forfeits the oblique stretch
-    // that keeps distant stars in frame, so the hole would swallow the
-    // view early and eat the flare finale; a partial lean-in sells the
-    // plunge and keeps the shot composed. dp is 0 at zoom 1, so rest
-    // still gives EXACTLY the slider value -- and with the fade-back
-    // phase gone, the return to rest snaps the tilt home in one frame.
+    // the whole descent lands in the final stretch (the plunge). The
+    // floor is an ABSOLUTE 40 deg off top-down, not a fraction of the
+    // slider, so the plunge always lands at the same angle whatever the
+    // resting tilt is. Clamped to the slider so a resting tilt already
+    // shallower than 40 deg is never tilted UP by the dive. Fully
+    // top-down forfeits the oblique stretch that keeps distant stars in
+    // frame, so the hole would swallow the view early and eat the flare
+    // finale; a partial lean-in sells the plunge and keeps the shot
+    // composed. Normalized so zoom 1 gives EXACTLY the slider value at
+    // rest -- and with the fade-back phase gone, the return to rest snaps
+    // the tilt home in one frame, in plain sight.
     const dp = Math.min(1.0, Math.max(0.0, 1.0 - currentZoom));
+    const E0 = 1.0 / 1024.0; // 2^-10, the easeInExpo baseline at dp = 0
+    const eased = (Math.pow(2.0, 10.0 * (dp - 1.0)) - E0) / (1.0 - E0);
     const TILT_FLOOR = 40.0 * Math.PI / 180.0;
     const tiltFloor = Math.min(state.camTilt, TILT_FLOOR);
-    currentTilt = state.camTilt + (tiltFloor - state.camTilt) * dp;
+    currentTilt = state.camTilt + (tiltFloor - state.camTilt) * eased;
     gl.uniform1f(U.uCamTilt, currentTilt);
 
     gl.uniform1f(U.iTime, shaderTime);
