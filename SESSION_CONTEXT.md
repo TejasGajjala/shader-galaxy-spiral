@@ -1130,26 +1130,3 @@ across galaxy.frag, the .glsl and both editors.
 Note item 4 from the option list (cap the bulge at 2 sheets) is a no-op at
 the 1.35 default, which already runs 2, and is SUPERSEDED by item 5 if
 that lands -- merging puts the bulge in the arm loop.
-
-## Item 75: Arm+bulge merged into one lattice walk -- BIGGEST WIN, VISIBLE COST
-
-starField already returns vec2(.x = full field, .y = keep subset) from a
-single 3x3 pass. The arm and bulge could not share it only because they
-sat at different heights (hBulge = 3x hDisk), so each sheet ran TWO walks.
-Putting the bulge on the arm's frame makes it one.
-
-Measured: 367.1 -> 287.4 ms [297,282,283], a further 22% -- far and away
-the largest single saving found in this shader. Combined with item 74 the
-rest frame is 396 -> 287, down 27%.
-
-THE COST IS VISIBLE. hBulge and residBulge are gone; the bulge no longer
-occupies a puffier spheroid than the disk, it sits in the same slab. Core
-crops at 2x DPR show it: the diffuse between-arm scatter thins out and the
-arm bands read crisper and more defined, while the core loses some of its
-soft off-plane halo. Arguably sharper, definitely different -- a LOOK
-decision, not a free optimisation, and it was flagged as such before
-implementing.
-
-Revert with `git revert` on this commit alone; item 74 is independent and
-stands either way. Item 4 from the option list (cap bulge sheets at 2) is
-moot once merged.
