@@ -829,3 +829,42 @@ expect ~4-5x the phone-frame cost.
 
 Arm wobble is a new default-on cost since the item-29 audit (5.5% -- its
 noise eval runs per sheet per pixel). Twinkle is now free (off).
+
+## Item 64: CORRECTION to item 63 -- the small entries were noise
+
+Item 63 measured each config ONCE. Re-running base / corona 0 /
+armWobble 0 / both 0 three times each shows the run-to-run spread is
+~ +/-10-15 ms, which swallows every small entry in that table:
+
+  base         mean 388.8  [384-393]
+  corona 0     mean 394.9  [388-406]   <- SLOWER than base, i.e. noise
+  armWobble 0  mean 388.0  [380-394]   <- no measurable saving
+  both 0       mean 388.5  [384-397]
+
+So item 63's "arm wobble 5.5%" and "corona 3.5%" are ARTEFACTS of
+single-sampling. Neither is a real cost at the defaults. By extension
+every entry there at or below ~35 ms (gas clouds 16, corona 14,
+wobble 22, and to a lesser degree smoke 34 and bulge 30) is at or near
+the noise floor and must not be quoted without repeats.
+
+What survives item 63 unchanged (differences 5-15x the noise band):
+  thick path vs flat   213 ms  (53% of frame)   SOLID
+  machinery at T=0.05  121 ms  (30%)            SOLID
+  sheet-count curve    329 / 400 / 456 / 566 for 2 / 3 / 4 / 6 sheets,
+                       ~59 ms per sheet          SOLID
+  dive band trace      peak ~2.3x rest at z 0.25-0.05  (few frames,
+                       directionally right, magnitude approximate)
+
+Gating status of the two sliders asked about:
+- uArmWobble IS gated: `if (uArmWobble < 0.001) return 0.0;` in
+  armWobble(), uniform-driven so fully coherent. Zero at 0 -- but the
+  work skipped is one noise() tap, too small to measure here.
+- uCorona is NOT gated: `float corona = uCorona * hazeMod * exp(...)`
+  runs the dot+exp on every pixel regardless (the code comment says so:
+  "Cheap single exp, computed unconditionally"). Setting it to 0 removes
+  the VISUAL, not the math. It is also boom-only downstream
+  (`boomLayer += corona * uOuterHazeColor`), so at rest in normal mode it
+  already contributes nothing while still computing.
+
+Lesson for any future audit here: 3+ repeats per config, and treat
+anything under ~40 ms on this rig as unresolved.
