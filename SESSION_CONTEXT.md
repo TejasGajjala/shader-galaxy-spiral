@@ -1181,3 +1181,38 @@ populations need separate footprints AND separate envelopes.
 Net after both reverts: 396 -> ~390 ms, roughly 1-2%. The honest total from
 this optimisation pass is small, because the two large wins both turned out
 to be paying for appearance.
+
+## Item 77: Two more exact star-lattice trims -- NO measurable gain here
+
+Looking past thickness at the 43% "floor" (ray math + star lattice + arm
+masks + dither). The lattice inner loop runs ~5 hash1 calls per cell x 9
+cells per pixel per LOD level, so hashes looked like the obvious target.
+Two are provably wasted:
+
+1. **starTwinkle hash gate.** It hashed before testing
+   `h > 1.0 - uTwinkleFraction`. At fraction 0 -- the production default --
+   hash1 returns [0,1) so that can never pass; the hash was waste on every
+   star-hit pixel. Now gated on the uniform. Exact.
+2. **kept-hash short-circuit.** `kept = hash1(...) <= keep` ran even when
+   keep = 0, which is what every ARM sheet call passes -- and those callers
+   read .x, never the .y population it feeds. Now
+   `(keep > 0.0) && (hash1(...) <= keep)`; GLSL && short-circuits.
+
+MEASURED: 394.3 ms [400,385,398] vs 396.5 [409,396,384]. Within noise --
+no gain on this rig. Kept anyway because both are exact and cost nothing,
+and a real GPU's cost profile differs from SwiftShader's (CPU branches are
+cheap here, and the compiler may already be eliminating them).
+
+Conclusion: removing 2 of ~5 hashes per cell moving the needle none says
+the lattice is NOT hash-bound here, so further micro-optimisation inside
+it is speculative without a real-device profile. The remaining idea
+considered and NOT attempted -- reordering the cell body to reject on
+distance before computing hs/sizeMul/starBase/radius/atten -- is a
+restructure with real risk of subtle error for a benefit this rig cannot
+show.
+
+STANDING GUIDANCE: the shader is at its measurable floor. The two large
+wins found this session both turned out to be paying for appearance (item
+75: bulge height; item 76: per-sheet arm envelope). What remains is
+host-side and known-large: render resolution (scales everything) and
+30 fps pacing at rest.

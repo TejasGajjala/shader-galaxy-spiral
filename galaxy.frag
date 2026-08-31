@@ -182,6 +182,11 @@ vec2 rotate(in vec2 p, in float t){
 // own phase of the wall-clock uTwinkleTime, so rotation/dive speed never
 // affects the shimmer.
 float starTwinkle(vec2 n) {
+    // Uniform gate. At fraction 0 -- the production default -- the test
+    // below can never pass (hash1 returns [0,1), so h > 1.0 is false), so
+    // the hash was pure waste on every star-hit pixel. Coherent branch,
+    // and exact: the function already returned 1.0 in that case.
+    if (uTwinkleFraction < 0.001) return 1.0;
     float h = hash1(n + vec2(99.1, 23.7));
     if (h > 1.0 - uTwinkleFraction) {
         float pulse = abs(sin(uTwinkleTime * uTwinkleSpeed + h * 100.0));
@@ -310,7 +315,11 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
         for (int dx = -1; dx <= 1; dx++) {
             vec2 n = cell + vec2(float(dx), float(dy)) + vec2(seed * 57.0, seed * 113.0);
 
-            bool kept = hash1(n + vec2(5.7, 113.1)) <= keep;
+            // Short-circuit. Every ARM sheet call passes keep = 0, and
+            // hash1 returns [0,1), so this can only ever be false there --
+            // and those callers read .x, never the .y population it feeds.
+            // GLSL && short-circuits, so the hash is skipped outright.
+            bool kept = (keep > 0.0) && (hash1(n + vec2(5.7, 113.1)) <= keep);
             if (!kept && wantAll < 0.5) continue;
 
             // Sheet-partition gate (skipped entirely on the flat path,
