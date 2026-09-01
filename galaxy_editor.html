@@ -162,7 +162,8 @@
   <div id="snap-overlay">
     <img alt="High-res galaxy snapshot" />
     <div class="snap-hint">Right-click (desktop) or long-press (mobile) the image and choose
-      "Save image as..." &mdash; the sandboxed webview blocks direct downloads.</div>
+      &ldquo;Save image as&hellip;&rdquo; &mdash; embedded viewers block direct downloads, so this is the
+      reliable route. Opened as a local file, it also saves automatically.</div>
     <button class="snap-close">Close</button>
   </div>
 </div>
@@ -1794,13 +1795,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.viewport(0, 0, oldW, oldH);
     gl.uniform2f(U.iResolution, oldW, oldH);
     pausedDirty = true; // repaint the frozen frame if paused
-    // Best-effort direct download -- works when the page runs standalone;
-    // the sandboxed artifact webview silently blocks it, so the overlay
-    // below is the path that always works (browser-native image save).
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'galaxy_' + w + 'x' + h + '_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
-    a.click();
+    // Direct download ONLY when this page is the top-level document. In a
+    // sandboxed frame (the published artifact) the click is refused AND
+    // the viewer shows the user a "file download isn't available" error,
+    // so attempting it there is worse than not offering it: the overlay
+    // below already covers that case via the browser's own image save.
+    if (window.self === window.top) {
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'galaxy_' + w + 'x' + h + '_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
+      a.click();
+    }
     const overlay = document.getElementById('snap-overlay');
     overlay.querySelector('img').src = url;
     overlay.classList.add('open');
