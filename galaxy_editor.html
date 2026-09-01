@@ -161,9 +161,7 @@
   <button id="pause-btn">Pause</button>
   <div id="snap-overlay">
     <img alt="High-res galaxy snapshot" />
-    <div class="snap-hint">Right-click (desktop) or long-press (mobile) the image and choose
-      &ldquo;Save image as&hellip;&rdquo; &mdash; embedded viewers block direct downloads, so this is the
-      reliable route. Opened as a local file, it also saves automatically.</div>
+    <div class="snap-hint">Preparing the image&hellip;</div>
     <button class="snap-close">Close</button>
   </div>
 </div>
@@ -1781,7 +1779,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
   // plain canvas upscale would blur -- this is a true re-render).
   // toDataURL is synchronous, so no preserveDrawingBuffer needed and the
   // restore can't race the encode.
-  document.getElementById('snap-btn').addEventListener('click', () => {
+  document.getElementById('snap-btn').addEventListener('click', async () => {
     const oldW = canvas.width, oldH = canvas.height;
     const scale = Math.min(3, 4096 / Math.max(oldW, oldH));
     const w = Math.round(oldW * scale), h = Math.round(oldH * scale);
@@ -1795,20 +1793,48 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     gl.viewport(0, 0, oldW, oldH);
     gl.uniform2f(U.iResolution, oldW, oldH);
     pausedDirty = true; // repaint the frozen frame if paused
-    // Direct download ONLY when this page is the top-level document. In a
-    // sandboxed frame (the published artifact) the click is refused AND
-    // the viewer shows the user a "file download isn't available" error,
-    // so attempting it there is worse than not offering it: the overlay
-    // below already covers that case via the browser's own image save.
+    const overlay = document.getElementById('snap-overlay');
+    const hint = overlay.querySelector('.snap-hint');
+    overlay.querySelector('img').src = url;
+    overlay.classList.add('open');
+
+    // How the image reaches the user depends entirely on where this runs.
+    //
+    // Top level (opened as a local file): a normal anchor download works.
+    //
+    // Embedded (the published artifact): the sandbox blocks EVERY download
+    // the page can initiate -- anchor clicks, data: and blob: hrefs, and
+    // the browser's own "Save image as..." on the overlay alike. There is
+    // no file route out at all. The CLIPBOARD is permitted though, and is
+    // what the values block already relies on, so that is the way out:
+    // copy the PNG itself and let the user paste it wherever they need.
     if (window.self === window.top) {
       const a = document.createElement('a');
       a.href = url;
       a.download = 'galaxy_' + w + 'x' + h + '_' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
       a.click();
+      hint.textContent = 'Saved to your downloads at ' + w + ' \u00d7 ' + h + '.';
+      return;
     }
-    const overlay = document.getElementById('snap-overlay');
-    overlay.querySelector('img').src = url;
-    overlay.classList.add('open');
+    hint.textContent = 'Copying to the clipboard\u2026';
+    try {
+      if (!window.ClipboardItem || !navigator.clipboard || !navigator.clipboard.write) {
+        throw new Error('clipboard image write unsupported');
+      }
+      // Decode the data URL by hand rather than fetch()ing it: the artifact
+      // CSP blocks fetch, data: URLs included.
+      const bin = atob(url.slice(url.indexOf(',') + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      await navigator.clipboard.write([
+        new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })
+      ]);
+      hint.textContent = 'Copied to the clipboard at ' + w + ' \u00d7 ' + h + ' \u2014 paste it anywhere.';
+    } catch (e) {
+      hint.textContent = 'This viewer blocks both downloads and clipboard images. '
+        + 'To save the full-resolution PNG, open galaxy_editor.html as a local file.';
+      console.error('snapshot: clipboard copy failed', e);
+    }
   });
   (() => {
     const overlay = document.getElementById('snap-overlay');
