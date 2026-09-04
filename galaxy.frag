@@ -302,6 +302,17 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
     // multiplier below so the field has small/large variety.
     float BASE_R = 0.009 / lvlScale;
     float pxFloor = uPxSize * 1.2;
+    // Conservative rejection radius, computed once per lattice level. A
+    // star can only reach this pixel from within (max reach + max sub-cell
+    // shift). reach never exceeds max(0.9/GRID, pxFloor) -- flareReach
+    // caps itself at the 0.9/GRID cell cap -- and the height shift is
+    // clamped to 0.45/GRID, and is zero when there is no slab. Cells
+    // outside that can be dropped BEFORE their size/radius/attenuation
+    // and height-offset math, which is the bulk of the fixed per-cell
+    // cost. Exact by construction: nothing that could draw is cut.
+    float hOffMax = (uDiskThickness > 0.001 && resid > 0.0) ? 0.45 / GRID : 0.0;
+    float rejR  = max(0.9 / GRID, pxFloor) + hOffMax;
+    float rejR2 = rejR * rejR;
     vec2 cell = floor(p * GRID);
     vec2 result = vec2(0.0);
 
@@ -331,6 +342,8 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
             float hx = hash1(n);
             float hy = hash1(n + vec2(31.41, 27.18));
             vec2 starPos = (n - vec2(seed * 57.0, seed * 113.0) + vec2(hx, hy)) / GRID;
+            vec2 dCell = p - starPos;
+            if (dot(dCell, dCell) > rejR2) continue;
 
             // Per-star size: hs^2 skews the distribution so most stars sit
             // near the small end and only a few reach the large end --

@@ -276,9 +276,9 @@ the perspective foreshortening of the old squash factor.)
 ## 8. Performance notes
 
 - **Flat disk is the fast path.** `uDiskThickness = 0` renders the
-  original single-plane starfield; > 0 pays for the height-sheet loop,
-  whose count scales with the slider (3 sheets at the 1.35 default,
-  ~2 per unit of thickness, capped at 8).
+  single-plane starfield; > 0 pays for the height-sheet loop, whose count
+  is `ceil(2T - 1)` — 2 sheets at the 1.35 default, capped at 8. Measured
+  by ablation, the thick path is **~51 % of the rest frame**.
 - **The frame gets cheaper as the dive darkens.** Haze, gas clouds, and
   dust warp are all uniform-gated: the clouds are skipped past mid-dive,
   the smoke past `uZoom < 0.03`, and a far-field early-out skips the whole
@@ -289,7 +289,7 @@ the perspective foreshortening of the old squash factor.)
   the softness. Keep `iResolution`/`uPxSize` in the same pixel space you
   actually render at.
 - **Halve the frame rate at rest.** At rest the only motion is the slow
-  0.05 rad/s rotation (twinkle speed defaults to 0), so consecutive 60 fps
+  0.036 rad/s rotation (twinkle is off by default), so consecutive 60 fps
   frames are nearly identical — paint at 30 fps at rest and full 60 only
   while `diving`. Halves average GPU load and battery with zero per-frame
   quality change (this is scheduling, not rendering). The driver already
@@ -314,7 +314,63 @@ the perspective foreshortening of the old squash factor.)
   the skip: `uArmSmoke` + `uCoreGlow` share one gate — both must be 0 to
   skip their smoke pass.
 
-## 9. Low-battery / power-saver mode
+## 9. If it is too heavy — the playbook
+
+Work down this list and **measure after each step**; stop when you hit
+frame budget. The shares are from ablation on a fixed rig (software
+raster) — treat the *ordering* and *ratios* as reliable, the absolute
+numbers as indicative.
+
+Where the frame actually goes at the shipped defaults:
+
+| | share |
+|---|---:|
+| star lattice (all forms) | **~76 %** |
+| smoke stack | ~5 % |
+| camera/ray + masks + core + gas + dither + colour | ~17 % |
+
+So anything that reduces **pixels** or **star-lattice passes** matters;
+tuning the other sliders does not.
+
+| # | change | where | expected | cost |
+|---|---|---|---|---|
+| 1 | **Cap render DPR** (try 2.0, then 1.5) | Flutter | Fill-rate scales with pixel count — 3× DPR on a 392×840 logical canvas is ~3.0 Mpx. Going to 2× is **~55 % fewer pixels**. Nothing else comes close. | mild softness |
+| 2 | **30 fps at rest**, 60 only while diving | Flutter | halves average load and battery | none per frame |
+| 3 | `uDiskThickness = 0` | uniform | ~51 % of the rest frame | loses the 3D slab — the disk goes flat |
+| 4 | `uMaxStarLod = 1.0` | uniform | flattens the mid-dive spike (the LOD cross-fade is the costliest frame, ~2.3× rest) | late dive refills fewer stars |
+| 5 | `uArmSmoke` **and** `uCoreGlow` = 0 | uniform | ~5 % | nebula loses filaments and nucleus glow |
+
+**Steps 1 and 2 are worth more than every uniform change combined**, and
+neither touches the look at rest. Do them first. If 1 + 2 are already in
+and it is still heavy, the honest answer is that the device cannot afford
+this shader at that resolution — step 3 is the next real cut, and it is a
+visible one.
+
+### What will NOT help
+
+Tuning `uArmWobble`, `uCorona`, `uGasClouds`, `uTwinkleFraction` or
+`uStarDensity`: all measured at or below the noise floor. `uStarDensity`
+in particular changes the lattice *spacing*, not the number of cells
+walked, so it is not a cost lever at all.
+
+Micro-optimising the shader further: three separate exact ALU reductions
+(a redundant `sqrt`, six integer-exponent `pow` calls, two provably-dead
+hashes, and a conservative per-cell early reject) were implemented and
+measured — **all within noise**. They are kept because they are free, but
+the lattice is not ALU-bound on the test rig. If a real-device profile
+says otherwise, that is new information worth acting on; without one,
+there is nothing left to cut in-shader that does not cost appearance
+(see §10).
+
+### To get more specific help
+
+A device profile beats any guess made here. Useful to know: which device
+and OS; whether the load is at **rest** or during the **dive**; the actual
+frame time or fps; and the DPR you are rendering at. Rest-heavy and
+dive-heavy have different fixes — rest points at steps 1–3, dive at
+step 4.
+
+## 10. Low-battery / power-saver mode
 
 On low battery the OS throttles CPU/GPU clocks (and iOS Low Power Mode
 caps ProMotion to 60 Hz), so the SAME shader suddenly drops frames — the
@@ -327,9 +383,9 @@ is independent and reversible when power returns:
 | step | change | saves | visible cost |
 |---|---|---|---|
 | 1 | Rest frame pacing 30 → 24 fps (dive 60 → 30) | large, battery-first | none per frame; dive slightly less silky |
-| 2 | `uArmSmoke` or `uCoreGlow` = 0 | skips the smoke pass when BOTH are 0 (~10 % of the rest frame) | nebula loses its filaments or its nucleus glow |
+| 2 | `uArmSmoke` **and** `uCoreGlow` = 0 | skips the smoke pass (~5 % of the rest frame, measured) | nebula loses its filaments and its nucleus glow |
 | 3 | Cap render DPR at 2.0 (or 1.5) | biggest single lever (fill-rate scales with pixel count) | mild softness, hidden by motion |
-| 4 | `uDiskThickness = 0` | ~20 % of the rest frame (flat star path) | 3D rim/parallax gone — flat but clean look |
+| 4 | `uDiskThickness = 0` | **~51 %** of the rest frame (measured) | 3D rim/parallax gone — flat but clean look |
 | 5 | `uMaxStarLod = 1.0` | flattens the mid-dive cost spike (the LOD cross-fade is the most expensive frame) | late dive refills fewer stars |
 
 Steps 1–3 are a good "battery saver" preset; 4–5 are the deep fallback
@@ -339,7 +395,7 @@ near-free. Remember to keep `iResolution`/`uPxSize` consistent with the
 DPR you actually render at (§7), and restore everything when
 `isInBatterySaveMode` clears.
 
-## 10. Constraints — things that look like optimisations and are not
+## 11. Constraints — things that look like optimisations and are not
 
 Each of these was implemented, measured and reverted. They are recorded so
 the same ground is not re-covered.
