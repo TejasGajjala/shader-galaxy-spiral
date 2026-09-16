@@ -358,8 +358,16 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
             // this star (sub-pixel), draw it just large enough (~1.2 px)
             // but dimmed by the area ratio, so it reads as the same small
             // point of light -- no size inflation, no shimmer.
-            float radius = max(starBase, pxFloor);
-            float atten = (starBase / radius) * (starBase / radius);
+            // Deep-dive ceiling (the floaters' 15 px cap, same pattern):
+            // past the uMaxStarLod refill limit the dive only MAGNIFIES
+            // the frozen field, and a disc past ~10 px reads as a soft
+            // blob with fat spikes (spike thickness scales with R). Cap
+            // by the MIN-axis footprint; min() keeps atten a pure dim so
+            // a capped star holds full brightness, never boosted. No-op
+            // at rest and early dive (verified bit-identical) -- it only
+            // engages once a star would exceed ~10 px on screen.
+            float radius = clamp(starBase, pxFloor, max(pxCtl.x * 10.0, pxFloor));
+            float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
             // Slab placement: hp rescaled within this sheet's window is
             // the star's continuous height inside the sheet's slice, and
