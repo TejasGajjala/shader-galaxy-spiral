@@ -68,7 +68,7 @@ reorder declarations there without rebuilding this table.
 | 24 | `uCamTilt` | 1.26 | radians off top-down; the dive drives this — §6 |
 | 25 | `uCompactness` | 1.88 |  |
 | 26 | `uStarDensity` | 3.68 |  |
-| 27 | `uMaxStarLod` | 2.0 | caps star-grid refill during the dive |
+| 27 | `uMaxStarLod` | 0.3 | caps star-grid refill during the dive (was 2.0; 0.3 chosen on device — sparser, calmer plunge) |
 | 28 | `uTwinkleFraction` | 0.00 |  |
 | 29 | `uTwinkleSpeed` | 0.00 |  |
 | 30 | `uTwinkleTime` | wall clock | wall clock — never the scaled `iTime` |
@@ -337,7 +337,7 @@ tuning the other sliders does not.
 | 1 | **Cap render DPR** (try 2.0, then 1.5) | Flutter | Fill-rate scales with pixel count — 3× DPR on a 392×840 logical canvas is ~3.0 Mpx. Going to 2× is **~55 % fewer pixels**. Nothing else comes close. | mild softness |
 | 2 | **30 fps at rest**, 60 only while diving | Flutter | halves average load and battery | none per frame |
 | 3 | `uDiskThickness = 0` | uniform | ~51 % of the rest frame | loses the 3D slab — the disk goes flat |
-| 4 | `uMaxStarLod = 1.0` | uniform | flattens the mid-dive spike (the LOD cross-fade is the costliest frame, ~2.3× rest) | late dive refills fewer stars |
+| 4 | `uMaxStarLod` | uniform | already ships at **0.3** (was 2.0): the stepped LOD refills and their cross-fade spike are gone at stock settings. Note the dive now runs a constant two-grid blend (f = 0.3), so dive frames still cost more than rest — but flat, no spike. | n/a — this is the shipped look |
 | 5 | `uArmSmoke` **and** `uCoreGlow` = 0 | uniform | ~5 % | nebula loses filaments and nucleus glow |
 
 **Steps 1 and 2 are worth more than every uniform change combined**, and
@@ -386,7 +386,7 @@ is independent and reversible when power returns:
 | 2 | `uArmSmoke` **and** `uCoreGlow` = 0 | skips the smoke pass (~5 % of the rest frame, measured) | nebula loses its filaments and its nucleus glow |
 | 3 | Cap render DPR at 2.0 (or 1.5) | biggest single lever (fill-rate scales with pixel count) | mild softness, hidden by motion |
 | 4 | `uDiskThickness = 0` | **~51 %** of the rest frame (measured) | 3D rim/parallax gone — flat but clean look |
-| 5 | `uMaxStarLod = 1.0` | flattens the mid-dive cost spike (the LOD cross-fade is the most expensive frame) | late dive refills fewer stars |
+| 5 | `uMaxStarLod` | already ships at 0.3 — no stepped refills left to flatten | n/a |
 
 Steps 1–3 are a good "battery saver" preset; 4–5 are the deep fallback
 for genuinely weak/hot devices. Do NOT dim stars or drop `uTwinkleTime`
