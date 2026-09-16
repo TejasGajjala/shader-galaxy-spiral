@@ -224,7 +224,15 @@ float starFlare(vec2 d, float dist, float radius, float reach, float hs, float a
     // barely decays inside the reach circle and smears every flared star
     // into a fog blob -- the spikes, not the bloom, carry the look.
     float bloom = exp(-(dist * dist) / (radius * radius * 2.0));
-    float amt = uFlare * flareRamp() * fvis * (0.45 + 0.55 * hs);
+    // Squared ramp: ease the flares IN. On the linear ramp the bloom
+    // halos ran near full brightness while the spikes were still stubs
+    // (reach starts at 2.5 R), so the approach phase read as a field of
+    // bright blobs rather than crosses. Squaring back-loads the flare
+    // energy into the stretch where the spikes have length; at full ramp
+    // (uZoom <= 0.07) the square is exactly 1, so the signed-off finale
+    // is bit-identical.
+    float ramp = flareRamp();
+    float amt = uFlare * (ramp * ramp) * fvis * (0.45 + 0.55 * hs);
     // Taper the whole flare to exactly zero at the reach boundary: the
     // bloom is still above black there (badly so when the screen cap
     // pins reach at ~2R on big stars), and truncating it mid-glow drew
