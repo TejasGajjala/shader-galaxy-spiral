@@ -369,15 +369,20 @@ vec2 starFieldLevel(vec2 p, float lvlScale, float seed, float keep, vec2 parVec,
             // this star (sub-pixel), draw it just large enough (~1.2 px)
             // but dimmed by the area ratio, so it reads as the same small
             // point of light -- no size inflation, no shimmer.
-            // Deep-dive ceiling (the floaters' 15 px cap, same pattern):
+            // Deep-dive ceiling (same pattern as the floater sheets):
             // past the uMaxStarLod refill limit the dive only MAGNIFIES
-            // the frozen field, and a disc past ~10 px reads as a soft
-            // blob with fat spikes (spike thickness scales with R). Cap
-            // by the MIN-axis footprint; min() keeps atten a pure dim so
-            // a capped star holds full brightness, never boosted. No-op
-            // at rest and early dive (verified bit-identical) -- it only
-            // engages once a star would exceed ~10 px on screen.
-            float radius = clamp(starBase, pxFloor, max(pxCtl.x * 10.0, pxFloor));
+            // the frozen field, so without a ceiling every star swells
+            // into a soft disc with fat spikes (spike thickness scales
+            // with R). At the shipped uMaxStarLod = 0.3 refill stops
+            // almost at once, so by the late dive nearly the WHOLE field
+            // sits AT this ceiling -- which makes the number itself the
+            // lever for how blobby the plunge reads. 6 px, tightened from
+            // 10 on device. Cap by the MIN-axis footprint; min() keeps
+            // atten a pure dim, so a capped star keeps full brightness at
+            // the smaller radius (crisper, not dimmer). No-op at rest and
+            // early dive: a star would have to exceed ~6 px there, and
+            // the largest is ~1 px.
+            float radius = clamp(starBase, pxFloor, max(pxCtl.x * 6.0, pxFloor));
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
             // Slab placement: hp rescaled within this sheet's window is
@@ -501,8 +506,12 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, vec2 pxMM) {
 
             float hs = hash1(n + vec2(7.31, 41.7));
             float starBase = BASE_R * mix(0.7, 1.4, hs * hs);
-            // Grow on screen as the dive closes in, but cap at ~15 px so
-            // a deep zoom never inflates a floater into a huge blob; the
+            // Grow on screen as the dive closes in, but cap at ~8 px so
+            // a deep zoom never inflates a floater into a huge blob. Was
+            // 15 px: these are the chunkiest stars AND carry a 1.25x
+            // brightness boost downstream, so they read as the brightest
+            // blobs of the late dive. Deliberately still looser than the
+            // main field's 6 px -- floaters are the bokeh strays. The
             // sub-pixel end keeps the same energy-conserving AA as the
             // main field. Cap by the MIN-axis footprint (pxMM.x) so BOTH
             // screen dimensions stay bounded -- a plane-space disc capped
@@ -510,7 +519,7 @@ float floaterSheet(vec2 p, vec2 parVec, float hSheet, float seed, vec2 pxMM) {
             // foreshortened regions. Floor by the MAX axis (pxMM.y) for
             // resolvability; the max() keeps the clamp range valid where
             // anisotropy is extreme.
-            float radius = clamp(starBase, pxMM.y * 1.2, max(pxMM.x * 15.0, pxMM.y * 1.2));
+            float radius = clamp(starBase, pxMM.y * 1.2, max(pxMM.x * 8.0, pxMM.y * 1.2));
             float atten = min(1.0, (starBase / radius) * (starBase / radius));
 
             float dist = length(ps - starPos - hOff);
