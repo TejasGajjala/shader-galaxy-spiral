@@ -342,6 +342,17 @@ float lhash(vec2 i) {
     return lperm(lperm(i.x) + i.y) / 289.0;
 }
 
+// Interleaved gradient noise (Jimenez), for the output dither. hash1 feeds
+// fragCoord * ~443 into fract(), and at a large render buffer those products
+// reach ~1e6, where float32 has almost no fractional bits left: at the far
+// corner of an S24 Ultra's 1080x2340 buffer it produced 390 distinct values
+// in a 160x160 patch. IGN's inner multipliers are tiny, so it stays full
+// precision at any resolution (25,600 of 25,600 in the same patch), and its
+// spectrum is close to blue noise, which is what a dither wants.
+float ign(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
 float vnoise(vec2 x) {
     vec2 i = floor(x);
     vec2 f = x - i;
@@ -433,7 +444,16 @@ vec3 nebulaField(vec2 pb, float amount) {
     // so there is no reason to pay for it per pixel.
     vec3 accent = mix(vec3(0.11, 0.24, 0.30), vec3(0.29, 0.15, 0.26), hueMix);
     tint = mix(tint, accent, uGasHue * 0.85);
-    return tint * n * amount * 0.40;
+    // Pedestal under the gas. Without it the gas lives at 8-bit luminance
+    // ~2.6-12 at 0.4 brightness -- the band where panels disagree most:
+    // OLEDs crush the lowest levels to black, so the dark half of the gas
+    // simply vanished on some phones and showed on others. 0.12 lifts the
+    // darkest gas to ~5.6 and the median from ~5.1 to ~8.2 while keeping the
+    // darkest-to-brightest span (~9.6 levels), so the banks keep their shape
+    // and only leave the crush zone. It scales with amount: uNebula = 0 is
+    // still pure black.
+    const float GAS_PEDESTAL = 0.12;
+    return tint * (n * 0.40 + GAS_PEDESTAL) * amount;
 }
 
 float bgStarField(vec2 pb, float latScale, float occScale) {
@@ -1274,7 +1294,9 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // ellipse right at rCut -- a seam in the sky, not a halo.
         vec3 skyCol = vec3(bgStars) + bgGas;
         skyCol = pow(clamp(skyCol, 0.0, 1.0), vec3(0.9)) * uFade;
-        skyCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+        // Full 8-bit step: the gas spans only ~10 levels, and a half-step
+        // dither cannot break a band edge that wide.
+        skyCol += (ign(fragCoord) - 0.5) * (2.0 / 255.0);
         fragColor = vec4(skyCol, 1.0);
         return;
     }
@@ -1519,7 +1541,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // truncates it to black there -- a visible oval terminator around the
     // galaxy. Half a bit of static per-pixel noise breaks that band edge
     // up, so the haze keeps fading perceptually all the way into space.
-    finalCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+    finalCol += (ign(fragCoord) - 0.5) * (2.0 / 255.0);
 
     fragColor = vec4(finalCol, 1.0);
 }

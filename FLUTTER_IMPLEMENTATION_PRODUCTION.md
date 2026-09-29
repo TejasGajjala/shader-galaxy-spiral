@@ -311,8 +311,30 @@ them. The same value looked different on every phone and invisible on some,
 and it was the source of the S24 Ultra's diagonal lines. The background
 starfield solves the "black void" problem on its own, consistently.
 
-**It includes the fix for those lines** (the exact-integer `lhash`, §7), so
-it is the best version of the gas, not the one that shipped with the bug.
+**It includes three fixes the shipped gas never had**, so it is the best
+version of the gas, not the one that went out:
+
+- **The diagonal lines** — the exact-integer `lhash` for the value-noise
+  corners (§7).
+- **The crush zone** — a pedestal (`GAS_PEDESTAL = 0.12`) under the gas.
+  Without it the gas sat at 8-bit luminance ~2.6–12 at 0.4 brightness, where
+  OLEDs crush the lowest levels to black. It now sits at ~5.6–15 (median ~8),
+  with the same ~9.6-level span, so the banks keep their shape and simply
+  leave the band panels disagree on. Measured on a OnePlus 9: sky min 5, p5 6,
+  median 8. It scales with brightness, so `uNebula = 0` is still pure black.
+- **Dither precision** — the output dither used `hash1(fragCoord)`, which
+  multiplies pixel coordinates by ~443; at a large render buffer that reaches
+  ~1e6, where float32 has almost no fractional bits (390 distinct values in a
+  160×160 patch at the far corner of an S24 Ultra's buffer). It now uses
+  interleaved gradient noise, which stays full precision at any resolution
+  (25,600 of 25,600) and is close to blue noise. The step is a full 8-bit
+  level, not half: the gas spans ~10 levels, and half a step cannot break a
+  band that wide.
+
+What it cannot fix: panels still render near-black differently, so the gas
+will never look identical on every phone. The pedestal makes it *present*
+everywhere; tuning it on a reference device and checking an LCD phone and a
+Samsung in Vivid mode is still the right sign-off.
 
 **To use it**, bind the reserved slots with real values instead of 0:
 
