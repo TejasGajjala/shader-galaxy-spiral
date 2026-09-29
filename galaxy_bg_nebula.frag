@@ -1,4 +1,4 @@
-// NEBULA build: galaxy_production.frag plus the background nebula gas,
+// BG NEBULA build: galaxy_production.frag plus the background nebula gas,
 // including the exact-integer lattice-hash fix. Same 62-float layout.
 //
 // Flutter FragmentProgram port of the spiral-galaxy shader -- FLOATER
