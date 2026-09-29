@@ -103,10 +103,10 @@ slots, `vec3` = 3). Total: **62 floats**. Indices 0–48 are unchanged from
 | **49** | **`uFlareStart`** | **0.25** | zoom depth at which flares wake |
 | **50** | **`uBgCount`** | **0.24** | background star occupancy. **0 = none, fully skipped** |
 | **51** | **`uBgSize`** | **0.15** | background star radius CAP in px; roll spans floor→cap |
-| 52 | `uNebula` | **0.40** on high/ultra, **0** elsewhere | gas brightness; 0 skips the whole layer |
+| 52 | `uNebula` | **0.35** on high/ultra, **0** elsewhere | gas brightness; 0 skips the whole layer |
 | **53** | **`uBgDrift`** | **1.00** | per-star drift speed |
-| 54 | `uGasSpread` | 0.20 | noise floor: low = defined banks, high = full-frame wash |
-| 55 | `uGasHue` | 0.40 | teal/rose accent; 0 = plain blue-violet |
+| 54 | `uGasSpread` | 0.40 | noise floor: low = defined banks, high = full-frame wash |
+| 55 | `uGasHue` | 0.20 | teal/rose accent; 0 = plain blue-violet |
 | **56** | **`uCloudSpin`** | **0.4833** | galaxy cloud texture vs arms; 0.5 = locked |
 | 57–58 | `uGasRotA` | cos/sin | gas octave A rotation — **host computes**, §5 |
 | 59–60 | `uGasRotB` | cos/sin | gas octave B rotation — host computes |
@@ -151,9 +151,10 @@ Three values cannot be derived inside the shader.
 two gas rotation angles:
 
 ```dart
-const gasRateA = 0.055, gasRateB = -0.092;   // rad/s, opposite senses
-final angA = twinkleTime * gasRateA;
-final angB = twinkleTime * gasRateB;
+// rad/s, opposite senses; phases are random once per launch
+const gasRateA = -0.0275, gasRateB = 0.046;
+final angA = gasPhaseA + twinkleTime * gasRateA;
+final angB = gasPhaseB + twinkleTime * gasRateB;
 f(math.cos(angA)); f(math.sin(angA));
 f(math.cos(angB)); f(math.sin(angB));
 ```
@@ -312,12 +313,12 @@ background starfield already solves the "black void" on every tier.
 
 - **The diagonal lines** — the exact-integer `lhash` for the value-noise
   corners (§7). This was the S24 Ultra bug.
-- **The crush zone** — a pedestal (`GAS_PEDESTAL = 0.12`) under the gas.
-  Without it the gas sat at 8-bit luminance ~2.6–12 at 0.4 brightness, where
-  OLEDs crush the lowest levels to black. It now sits at ~5.6–15 (median ~8),
-  with the same ~9.6-level span, so the banks keep their shape. Measured on a
-  OnePlus 9: sky min 5, p5 6, median 8. Scales with brightness, so
-  `uNebula = 0` is still pure black.
+- **The crush zone** — a pedestal (`GAS_PEDESTAL = 0.06`) under the gas.
+  Without it the gas sat at 8-bit luminance ~2.3–10.5 at 0.35 brightness,
+  where OLEDs crush the lowest levels to black. The pedestal lifts the whole
+  range by ~1.3 levels with the same span, so the banks keep their shape.
+  (0.12 was tried first; a tester found the haze too strong on an S24 Ultra.) Scales
+  with brightness, so `uNebula = 0` is still pure black.
 - **Dither precision** — the output dither used `hash1(fragCoord)`, which
   multiplies pixel coordinates by ~443; at a large render buffer that reaches
   ~1e6, where float32 has almost no fractional bits (390 distinct values in a
@@ -333,9 +334,9 @@ plus an LCD phone and a Samsung in Vivid mode.
 
 | idx | uniform | value |
 |----:|---------|-------|
-| 52 | `uNebula` | 0.40 brightness |
-| 54 | `uGasSpread` | 0.20 |
-| 55 | `uGasHue` | 0.40 |
+| 52 | `uNebula` | 0.35 brightness |
+| 54 | `uGasSpread` | 0.40 |
+| 55 | `uGasHue` | 0.20 |
 | 57–60 | `uGasRotA/B` | host-computed cos/sin, §5 |
 
 Gas cost is flat: brightness, spread and hue are multiplies on a value
