@@ -22,7 +22,7 @@ added behind it, off by default at uniform 0:
   finale is the star swarm alone.
 
 **Nebula gas was built, then removed from this build.** It lives on in
-`galaxy_production_nebula.frag` — see §9 for why, and how to use it. Its
+`galaxy_bg_nebula.frag` — see §9 for why, and how to use it. Its
 uniforms keep their slots here so both files share one layout.
 
 **The dive was reworked end to end**: flare profile, pacing, camera tilt,
@@ -241,7 +241,7 @@ nowhere else: a shader-compiler behaviour, not resolution, display or
 precision (Flutter emits `highp`). Reproduced offline by simulating the
 regrouping. The fix is an exact-integer hash — every intermediate an integer
 below 2²⁴, so exact in float32 and identical however it is grouped. It is in
-`galaxy_production_nebula.frag` as `lhash`.
+`galaxy_bg_nebula.frag` as `lhash`.
 
 **The same exposure remains in this build's star lattices.** The main star
 field and the floaters scan 3×3 neighbour cells, so a star straddling a cell
@@ -297,7 +297,7 @@ before debugging anything else.
 
 ---
 
-## 9. The nebula variant — `galaxy_production_nebula.frag`
+## 9. The nebula variant — `galaxy_bg_nebula.frag`
 
 Identical to `galaxy_production.frag` plus the background gas: two octaves of
 value noise, rotating in opposite senses, with a free teal/rose accent taken

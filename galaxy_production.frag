@@ -1,4 +1,4 @@
-// PRODUCTION build, background gas removed (see galaxy_production_nebula.frag).
+// PRODUCTION build, background gas removed (see galaxy_bg_nebula.frag).
 //
 // Flutter FragmentProgram port of the spiral-galaxy shader -- FLOATER
 // build: a production-lean variant of galaxy.frag.
@@ -1131,7 +1131,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         ? bgStarField(pScreen * bgScale, bgScale, bgClear) * bgFade
         : 0.0;
     // The nebula gas is not in this build -- it is archived, with its fixes,
-    // as galaxy_production_nebula.frag. Its uniforms (52, 54, 55, 57-60) stay
+    // as galaxy_bg_nebula.frag. Its uniforms (52, 54, 55, 57-60) stay
     // declared AND referenced so the 62-float layout the host binds BY INDEX
     // is unchanged: a uniform the compiler can prove unused may be stripped,
     // which shifts every index after it. The host always writes uNebula = 0,
