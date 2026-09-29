@@ -266,7 +266,7 @@ class _Tuning {
 
   /// Faint gas between the background stars (shader index 52). 0 = off and
   /// fully skipped -- it is the only full-screen addition here.
-  double nebula = 0.60;
+  double nebula = 0.0;
 
   /// Slow looping orbit on a slice of the background stars (index 53).
   double bgDrift = 1.00;
@@ -309,7 +309,7 @@ class _Tuning {
     flareStart = 0.25;
     bgCount = 0.24;
     bgSize = 0.15;
-    nebula = 0.60;
+    nebula = 0.0;
     bgDrift = 1.00;
     gasSpread = 0.20;
     gasHue = 0.50;
@@ -500,7 +500,7 @@ class GalaxyDotPainter extends CustomPainter {
     f(0.25); // 49 uFlareStart — overridden below; kept in step with it
     f(0.24); // 50 uBgCount — how many background stars
     f(0.15); // 51 uBgSize  — how big, floored at 2 rendered px
-    f(0.60); // 52 uNebula  — faint background gas; 0 skips it entirely
+    f(0.0); // 52 uNebula — gas removed from production; slot kept, write 0
     f(1.00); // 53 uBgDrift — slow looping orbit on some background stars
     f(0.20); // 54 uGasSpread — how much of the sky the gas covers
     f(0.50); // 55 uGasHue — teal/rose accent strength

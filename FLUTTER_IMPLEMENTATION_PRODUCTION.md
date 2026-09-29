@@ -12,16 +12,18 @@ that produced every number below; it is reference, not a library.
 
 ## 1. What is new since `galaxy_floater.frag`
 
-**The galaxy is no longer alone in a black void.** Three layers were added
-behind it, all off by default at uniform 0:
+**The galaxy is no longer alone in a black void.** A background starfield was
+added behind it, off by default at uniform 0:
 
 - **Background starfield** (`uBgCount`, `uBgSize`, `uBgDrift`) — a single-cell
   lattice, one star per occupied cell. No 3×3 neighbour scan: the cheap
   lookup is the whole trick, and it is why this layer is free.
-- **Nebula gas** (`uNebula`, `uGasSpread`, `uGasHue`) — two octaves of value
-  noise. 12 hash taps per pixel, the only genuinely full-screen addition.
-- **Both fade out during the dive** and are occluded by the galaxy, so the
+- **It fades out during the dive** and is occluded by the galaxy, so the
   finale is the star swarm alone.
+
+**Nebula gas was built, then removed from this build.** It lives on in
+`galaxy_production_nebula.frag` — see §9 for why, and how to use it. Its
+uniforms keep their slots here so both files share one layout.
 
 **The dive was reworked end to end**: flare profile, pacing, camera tilt,
 rotation ramp. See §6.
@@ -100,17 +102,23 @@ slots, `vec3` = 3). Total: **62 floats**. Indices 0–48 are unchanged from
 | **49** | **`uFlareStart`** | **0.25** | zoom depth at which flares wake |
 | **50** | **`uBgCount`** | **0.24** | background star occupancy. **0 = none, fully skipped** |
 | **51** | **`uBgSize`** | **0.15** | background star radius CAP in px; roll spans floor→cap |
-| **52** | **`uNebula`** | **0.60** | background gas brightness. **0 = off, fully skipped** |
+| 52 | `uNebula` | **0** | *reserved* — gas, nebula build only. Write 0 |
 | **53** | **`uBgDrift`** | **1.00** | per-star drift speed |
-| **54** | **`uGasSpread`** | **0.20** | how much of the sky the gas covers |
-| **55** | **`uGasHue`** | **0.50** | teal/rose accent strength; 0 = plain blue-violet |
+| 54 | `uGasSpread` | 0 | *reserved* — nebula build only |
+| 55 | `uGasHue` | 0 | *reserved* — nebula build only |
 | **56** | **`uCloudSpin`** | **0.4833** | galaxy cloud texture vs arms; 0.5 = locked |
-| **57–58** | **`uGasRotA`** | cos/sin | gas octave A rotation — **host computes**, see §5 |
-| **59–60** | **`uGasRotB`** | cos/sin | gas octave B rotation — host computes |
+| 57–58 | `uGasRotA` | 0 | *reserved* — nebula build only |
+| 59–60 | `uGasRotB` | 0 | *reserved* — nebula build only |
 | **61** | **`uLiftY`** | see §5 | galaxy lift in p units |
 
-Any of `uBgCount`, `uNebula`, `uBgDrift` at 0 removes that feature and its
-cost. The backdrop is opt-in.
+Any of `uBgCount`, `uBgDrift` at 0 removes that feature and its cost. The
+backdrop is opt-in.
+
+**The reserved slots must still be written.** Flutter binds uniforms by
+index, so skipping them would shift everything after. They stay declared
+*and referenced* in the shader, behind a check on `uNebula` the compiler
+cannot evaluate: a uniform it can prove unused may be stripped, and that
+alone would move `uCloudSpin` and `uLiftY` to the wrong slots.
 
 ---
 
@@ -138,10 +146,11 @@ Get this wrong and the galaxy is off-centre or off-screen entirely.
 
 ## 5. Uniforms the host must compute
 
-Three values cannot be derived inside the shader.
+One value cannot be derived inside the shader in this build; the nebula
+build adds two more (§9).
 
-**`uGasRotA` / `uGasRotB` (57–60)** — cos and sin of the two gas rotation
-angles:
+**`uGasRotA` / `uGasRotB` (57–60), nebula build only** — cos and sin of the
+two gas rotation angles:
 
 ```dart
 const gasRateA = 0.055, gasRateB = -0.092;   // rad/s, opposite senses
@@ -219,7 +228,30 @@ subset.
 
 ---
 
-## 7. Two traps that cost real debugging time
+## 7. Three traps that cost real debugging time
+
+**A chaotic hash on a shared lattice corner breaks on some GPUs.** Value noise
+reads each lattice corner from the four cells around it, as four *different*
+expressions — `hash1(i + vec2(1,0))` in one cell, `hash1(floor(x))` in the
+next. `hash1` amplifies a one-ulp input difference into a completely
+different output, so a compiler that regroups `(i+1)·443.897` as
+`i·443.897 + 443.897` gives one corner two values and the noise **steps** at
+that cell edge. It was the hard diagonal lines on a Galaxy S24 Ultra, and
+nowhere else: a shader-compiler behaviour, not resolution, display or
+precision (Flutter emits `highp`). Reproduced offline by simulating the
+regrouping. The fix is an exact-integer hash — every intermediate an integer
+below 2²⁴, so exact in float32 and identical however it is grouped. It is in
+`galaxy_production_nebula.frag` as `lhash`.
+
+**The same exposure remains in this build's star lattices.** The main star
+field and the floaters scan 3×3 neighbour cells, so a star straddling a cell
+border is computed by pixels in different cells through different
+expressions. A regrouping compiler would draw it clipped or split — in
+simulation, 22% of star pixels differ. Not yet observed on a device, not yet
+fixed; the fix that keeps the star layout identical is to pass each cell id
+through `mod()` before hashing, so the compiler cannot fold the neighbour
+offset into the multiply. **Emulators cannot catch this class of bug** — they
+compile on the host GPU.
 
 **`uMaxStarLod` is in LOD doublings, not zoom.** At 0.25 the lattice stops
 refilling at `zoom = 2^-0.25 ≈ 0.84` — almost the whole dive. Past that the
@@ -253,7 +285,7 @@ Measured deltas at native scale on a Snapdragon 888:
 | Feature | Cost |
 |---|---|
 | Background starfield | free (early-out on ~80% of pixels) |
-| Nebula gas | ~0 (12 arithmetic hashes, no trig) |
+| Nebula gas | removed from this build; ~0 on a flagship GPU, but it is the one full-screen per-pixel layer, which is what weak and software GPUs handle worst |
 | Gas rotation in-shader | 0.7 ms — moved to host uniforms |
 | Star clearing around the galaxy | free (scales occupancy, so stars are never drawn) |
 
@@ -265,6 +297,37 @@ before debugging anything else.
 
 ---
 
-## 9. Licence
+## 9. The nebula variant — `galaxy_production_nebula.frag`
+
+Identical to `galaxy_production.frag` plus the background gas: two octaves of
+value noise, rotating in opposite senses, with a free teal/rose accent taken
+from the octave difference. Same 62-float layout, so it is a drop-in swap.
+
+**Why it left production.** At the brightness that suited the design (0.4)
+the gas occupies 8-bit levels ~2–20, the part of the range where panels
+disagree most: OLEDs crush the lowest levels to pure black, LCD backlight
+lifts them into grey, and Samsung's Vivid mode and Vision Booster amplify
+them. The same value looked different on every phone and invisible on some,
+and it was the source of the S24 Ultra's diagonal lines. The background
+starfield solves the "black void" problem on its own, consistently.
+
+**It includes the fix for those lines** (the exact-integer `lhash`, §7), so
+it is the best version of the gas, not the one that shipped with the bug.
+
+**To use it**, bind the reserved slots with real values instead of 0:
+
+| idx | uniform | suggested |
+|----:|---------|-----------|
+| 52 | `uNebula` | 0.40 brightness; 0 skips the whole layer |
+| 54 | `uGasSpread` | 0.20 — the noise floor; low = defined banks, high = full-frame wash |
+| 55 | `uGasHue` | 0.40 teal/rose accent; 0 = plain blue-violet |
+| 57–60 | `uGasRotA/B` | host-computed cos/sin, §5 |
+
+Gas cost is flat: brightness, spread and hue are multiplies on a value
+already computed, so only `uNebula = 0` saves anything.
+
+---
+
+## 10. Licence
 
 Same as the rest of this repository.
