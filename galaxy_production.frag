@@ -1,4 +1,5 @@
-// PRODUCTION build, background gas removed (see galaxy_bg_nebula.frag).
+// PRODUCTION build. Includes the background nebula gas, drawn on the top
+// two quality tiers only (uNebula = 0 elsewhere skips it). 62-float layout.
 //
 // Flutter FragmentProgram port of the spiral-galaxy shader -- FLOATER
 // build: a production-lean variant of galaxy.frag.
@@ -317,6 +318,144 @@ float flareReach(float radius, float cellCap, float pxL) {
 //
 // Deliberately NOT rotated with the galaxy: these are distant, so they hold
 // still while the disk turns. That is also one less rotate() per pixel.
+// Value noise over one bilinear cell. hash1 is arithmetic only -- no trig --
+// so four taps are cheap enough to afford full-screen.
+// Exact-integer lattice hash for the value-noise corners.
+//
+// hash1 is fine for anything sampled once per cell, but value noise reads the
+// SAME lattice corner from four neighbouring cells, and those four reads are
+// four different expressions: hash1(i + vec2(1,0)) here, hash1(floor(x)) in
+// the next cell. hash1 is chaotic by design -- a one-ulp difference in its
+// input products becomes a completely different output -- so any compiler
+// that regroups (i+1)*443.897 as i*443.897 + 443.897 gives a shared corner
+// two different values, and the noise STEPS at that cell edge. Rotated with
+// the gas frame, those steps are the hard diagonal lines seen on a Galaxy
+// S24 Ultra and on no other test device: it is a compiler behaviour, not a
+// resolution or display one.
+//
+// Every value here is an integer below 2^24 (max (576*34+1)*576 = 11.3M), so
+// every operation is EXACT in float32, and exact arithmetic gives the same
+// answer however it is grouped. The corner is identical from all four cells.
+float lperm(float x) { return mod((x * 34.0 + 1.0) * x, 289.0); }
+float lhash(vec2 i) {
+    i = mod(i, 289.0);
+    return lperm(lperm(i.x) + i.y) / 289.0;
+}
+
+// Interleaved gradient noise (Jimenez), for the output dither. hash1 feeds
+// fragCoord * ~443 into fract(), and at a large render buffer those products
+// reach ~1e6, where float32 has almost no fractional bits left: at the far
+// corner of an S24 Ultra's 1080x2340 buffer it produced 390 distinct values
+// in a 160x160 patch. IGN's inner multipliers are tiny, so it stays full
+// precision at any resolution (25,600 of 25,600 in the same patch), and its
+// spectrum is close to blue noise, which is what a dither wants.
+float ign(vec2 p) {
+    return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
+}
+
+float vnoise(vec2 x) {
+    vec2 i = floor(x);
+    vec2 f = x - i;
+    f = f * f * (3.0 - 2.0 * f);
+    float a = lhash(i);
+    float b = lhash(i + vec2(1.0, 0.0));
+    float c = lhash(i + vec2(0.0, 1.0));
+    float d = lhash(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+}
+
+// Two octaves of gas, and two is the floor: one octave is visibly a lumpy
+// gradient rather than cloud. Eight hash taps is the entire cost -- the rest
+// is mix(). Thresholded hard and cubed, because gas that tints every pixel
+// just lifts the black level; it has to sit in a minority of the sky as soft
+// banks with real black between them.
+/// rotate() with the angle's cosine and sine supplied instead of computed.
+/// Matches rotate(p, t) exactly for cs = vec2(cos(t), sin(t)).
+vec2 rotCS(vec2 p, vec2 cs) {
+    return p * cs.x - vec2(p.y, -p.x) * cs.y;
+}
+
+vec3 nebulaField(vec2 pb, float amount) {
+    // 3.2, not 1.15: pScreen spans y in [-1,1], so at 1.15 barely two noise
+    // cells covered the whole screen and the "cloud" was a near-constant
+    // value -- invisible, whatever the gain. This puts ~6 cells across the
+    // frame, which is the scale banks actually read at.
+    // The two octaves travel on DIFFERENT velocities, near enough to
+    // opposite. One shared velocity only slides the same shape across the
+    // screen; letting them pass through each other makes the banks form and
+    // dissolve, which is the animation -- and it costs nothing, because both
+    // samples were already being taken.
+    // ~7x the earlier velocities. At 0.013 q-units/s the banks moved about
+    // 2 px a second, which is real but sits under the threshold where slow
+    // smooth motion registers at all -- the same trap the stars were in. The
+    // two octaves also differ by more than direction now: the fine one runs
+    // faster AND against the coarse one, so the interference churns instead
+    // of sliding.
+    // 4.6, not 3.2: at the coarser scale barely six cells covered the frame,
+    // so a single low cell left a whole corner empty no matter how high the
+    // floor went. More cells means the dark patches are small and everywhere,
+    // instead of large and somewhere.
+    // Rotation, not translation. A velocity gives every pixel the same
+    // direction, and the eye reads the sum of the two octaves as one march
+    // across the sky. A rotating sample frame has no net direction anywhere,
+    // and unlike a spatially varying displacement it is RIGID -- nothing
+    // stretches or squashes, which is what made the advected version read as
+    // a rubber sheet.
+    //
+    // The angle depends only on time, so both rotations are uniform across
+    // the frame: two multiply-adds per pixel, no extra noise taps.
+    vec2 q = rotCS(pb, uGasRotA) * 4.6;
+    // Octaves kept separate: their DIFFERENCE is a free region map. Both
+    // samples were already being taken for the density, so the accent hue
+    // below rides along at no cost -- and because the two travel on opposing
+    // velocities, the colour regions drift through each other rather than
+    // sitting fixed on the density they tint.
+    float oc = vnoise(q);
+    // Opposite sense and a faster rate, so the two octaves shear past each
+    // other and the banks form and dissolve rather than turning as one disc.
+    float fi = vnoise(rotCS(pb, uGasRotB) * 12.42 + vec2(17.3, 5.1));
+    float n = oc * 0.65 + fi * 0.35;
+    // Value noise clusters hard around 0.5, so a window of 0.46..0.92 threw
+    // away nearly the whole distribution. Squared once (not cubed) keeps the
+    // banks soft-edged without burying the amplitude.
+    // Wide window and a gentle curve: a tight threshold plus a square made
+    // dense purple islands with hard black between them. Opening the window
+    // spreads the same noise over far more of the sky, and pow(,1.35) keeps
+    // the falloff soft instead of squaring the middle out of existence --
+    // thin veil everywhere, not a few saturated blobs.
+    // Opened right up, with a floor under it. Even a wide threshold still
+    // leaves large tracts at exactly zero, and those empty tracts are what
+    // read as the gas being bunched up. A base wash everywhere plus softer
+    // banks on top covers the frame instead of dotting it.
+    n = smoothstep(0.08, 1.0, n);
+    // The floor is what "spread" means: at 0 the noise decides where there is
+    // any gas at all and it sits in isolated banks; at 1 gas covers the frame
+    // and the noise only modulates it.
+    float floorN = mix(0.05, 0.88, uGasSpread);
+    n = floorN + (1.0 - floorN) * pow(n, 1.05);
+    vec3 tint = mix(vec3(0.11, 0.14, 0.30), vec3(0.28, 0.19, 0.40), n);
+    // Teal where the coarse octave leads, rose where the fine one does.
+    // Kept desaturated and close in luminance to the base, so it reads as a
+    // hue shift in the same gas rather than as coloured lights behind it.
+    float hueMix = clamp(0.5 + (oc - fi) * 1.7, 0.0, 1.0);
+    // Both accents pulled 30% toward their own luminance -- desaturated at
+    // constant brightness, so the hue still reads but stops being a colour
+    // wash. Baked into the literals rather than computed: the mix is fixed,
+    // so there is no reason to pay for it per pixel.
+    vec3 accent = mix(vec3(0.11, 0.24, 0.30), vec3(0.29, 0.15, 0.26), hueMix);
+    tint = mix(tint, accent, uGasHue * 0.85);
+    // Pedestal under the gas. Without it the gas lives at 8-bit luminance
+    // ~2.6-12 at 0.4 brightness -- the band where panels disagree most:
+    // OLEDs crush the lowest levels to black, so the dark half of the gas
+    // simply vanished on some phones and showed on others. 0.12 lifts the
+    // darkest gas to ~5.6 and the median from ~5.1 to ~8.2 while keeping the
+    // darkest-to-brightest span (~9.6 levels), so the banks keep their shape
+    // and only leave the crush zone. It scales with amount: uNebula = 0 is
+    // still pure black.
+    const float GAS_PEDESTAL = 0.12;
+    return tint * (n * 0.40 + GAS_PEDESTAL) * amount;
+}
+
 float bgStarField(vec2 pb, float latScale, float occScale) {
     // Fixed lattice. Cell size has to leave room for the largest star the
     // size slider can ask for, since the single-cell lookup only holds while
@@ -1130,15 +1269,17 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     float bgStars = (uBgCount > 0.001 && bgFade > 0.001)
         ? bgStarField(pScreen * bgScale, bgScale, bgClear) * bgFade
         : 0.0;
-    // The nebula gas is not in this build -- it is archived, with its fixes,
-    // as galaxy_bg_nebula.frag. Its uniforms (52, 54, 55, 57-60) stay
-    // declared AND referenced so the 62-float layout the host binds BY INDEX
-    // is unchanged: a uniform the compiler can prove unused may be stripped,
-    // which shifts every index after it. The host always writes uNebula = 0,
-    // so this never runs -- the compiler simply cannot prove that. One compare.
-    if (uNebula < -1.0) {
-        bgStars += uGasSpread + uGasHue + uGasRotA.x + uGasRotB.x;
-    }
+    // Gas rides the same frame and the same fade as the stars, so the
+    // backdrop pushes in and clears as one layer.
+    // Gas gathers where the stars are. Real nebulae sit in the galactic
+    // plane, so weighting it by distance from the disk is both the honest
+    // shape and nearly free: length(p) is already in hand, and it costs one
+    // smoothstep for the whole frame. Never drops to zero -- the far field
+    // keeps a thin wash so the frame edges do not read as a cut-off.
+    float gasWeight = 1.0;
+    vec3 bgGas = (uNebula > 0.001 && bgFade > 0.001)
+        ? nebulaField(pScreen * bgScale, uNebula) * bgFade * gasWeight
+        : vec3(0.0);
 
     float rCut = 2.5;
     if (groundVis < 0.001 || dot(p, p) > rCut * rCut) {
@@ -1151,9 +1292,11 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
         // sky and body halves of the frame graded the backdrop differently,
         // and with the gas now covering everything that mismatch drew a hard
         // ellipse right at rCut -- a seam in the sky, not a halo.
-        vec3 skyCol = vec3(bgStars);
+        vec3 skyCol = vec3(bgStars) + bgGas;
         skyCol = pow(clamp(skyCol, 0.0, 1.0), vec3(0.9)) * uFade;
-        skyCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+        // Full 8-bit step: the gas spans only ~10 levels, and a half-step
+        // dither cannot break a band edge that wide.
+        skyCol += (ign(fragCoord) - 0.5) * (2.0 / 255.0);
         fragColor = vec4(skyCol, 1.0);
         return;
     }
@@ -1379,8 +1522,16 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
 
     float bgLum = max(normalLayer.r, max(normalLayer.g, normalLayer.b));
     float bgOcc = clamp(bgLum * 2.5, 0.0, 1.0);
+    // Exponential, not a clamped multiply: `clamp(bgLum * 8.0)` saturated at
+    // a luminance of 0.125, which drew a hard line right where the disk's
+    // faint halo begins -- gas full strength on one side, cut dead on the
+    // other. That visible border is what a hard knee looks like. This ramps
+    // smoothly and never saturates, so the halo occludes gradually, which is
+    // what a semi-transparent halo should do.
+    float gasOcc = 1.0 - exp(-bgLum * 4.5);
     vec3 finalCol = normalLayer
-                  + bgStars * (1.0 - bgOcc) * (1.0 - coreMask);
+                  + (bgStars * (1.0 - bgOcc) + bgGas * (1.0 - gasOcc))
+                    * (1.0 - coreMask);
 
     finalCol = pow(clamp(finalCol, 0.0, 1.0), vec3(0.9));
     finalCol *= uFade;
@@ -1390,7 +1541,7 @@ void mainImage(out vec4 fragColor, in vec2 fragCoord) {
     // truncates it to black there -- a visible oval terminator around the
     // galaxy. Half a bit of static per-pixel noise breaks that band edge
     // up, so the haze keeps fading perceptually all the way into space.
-    finalCol += (hash1(fragCoord) - 0.5) * (1.0 / 255.0);
+    finalCol += (ign(fragCoord) - 0.5) * (2.0 / 255.0);
 
     fragColor = vec4(finalCol, 1.0);
 }
