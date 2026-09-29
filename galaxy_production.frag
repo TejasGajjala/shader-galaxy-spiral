@@ -445,14 +445,14 @@ vec3 nebulaField(vec2 pb, float amount) {
     vec3 accent = mix(vec3(0.11, 0.24, 0.30), vec3(0.29, 0.15, 0.26), hueMix);
     tint = mix(tint, accent, uGasHue * 0.85);
     // Pedestal under the gas. Without it the gas lives at 8-bit luminance
-    // ~2.6-12 at 0.4 brightness -- the band where panels disagree most:
+    // ~2.3-10.5 at 0.35 brightness -- the band where panels disagree most:
     // OLEDs crush the lowest levels to black, so the dark half of the gas
-    // simply vanished on some phones and showed on others. 0.12 lifts the
-    // darkest gas to ~5.6 and the median from ~5.1 to ~8.2 while keeping the
-    // darkest-to-brightest span (~9.6 levels), so the banks keep their shape
-    // and only leave the crush zone. It scales with amount: uNebula = 0 is
+    // simply vanished on some phones and showed on others. 0.06 lifts the
+    // whole range by ~1.3 levels (to ~3.6-12) while keeping the
+    // darkest-to-brightest span, so the banks keep their shape and clear the
+    // darkest levels. It scales with amount: uNebula = 0 is
     // still pure black.
-    const float GAS_PEDESTAL = 0.12;
+    const float GAS_PEDESTAL = 0.06;
     return tint * (n * 0.40 + GAS_PEDESTAL) * amount;
 }
 

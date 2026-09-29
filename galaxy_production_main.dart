@@ -266,17 +266,17 @@ class _Tuning {
 
   /// Faint gas between the background stars (shader index 52). 0 = off and
   /// fully skipped -- it is the only full-screen addition here.
-  double nebula = 0.40;
+  double nebula = 0.35;
 
   /// Slow looping orbit on a slice of the background stars (index 53).
   double bgDrift = 1.00;
 
   /// How much of the sky the gas covers (shader index 54), independent of how
   /// bright it is.
-  double gasSpread = 0.20;
+  double gasSpread = 0.40;
 
   /// Accent hue strength for the gas (shader index 55).
-  double gasHue = 0.50;
+  double gasHue = 0.20;
 
   /// Galaxy cloud-texture spin relative to the arms (shader index 56).
   /// 0.5 = locked, 1.0 = 5x the arms, 0.0 = 0.5x BACKWARDS. 0.4833
@@ -309,10 +309,10 @@ class _Tuning {
     flareStart = 0.25;
     bgCount = 0.24;
     bgSize = 0.15;
-    nebula = 0.40;
+    nebula = 0.35;
     bgDrift = 1.00;
-    gasSpread = 0.20;
-    gasHue = 0.50;
+    gasSpread = 0.40;
+    gasHue = 0.20;
     cloudSpin = 0.4833;
     diveTiltDeg = 30.0;
     zoomPin = 1.0;
@@ -360,6 +360,10 @@ class _Tuning {
     56: cloudSpin,
   };
 }
+
+/// Launch-fixed random start angles for the gas's two noise octaves.
+final double _gasPhaseA = math.Random().nextDouble() * 2 * math.pi;
+final double _gasPhaseB = math.Random().nextDouble() * 2 * math.pi;
 
 class GalaxyDotPainter extends CustomPainter {
   GalaxyDotPainter({
@@ -500,17 +504,19 @@ class GalaxyDotPainter extends CustomPainter {
     f(0.25); // 49 uFlareStart — overridden below; kept in step with it
     f(0.24); // 50 uBgCount — how many background stars
     f(0.15); // 51 uBgSize  — how big, floored at 2 rendered px
-    f(0.40); // 52 uNebula — gas; the app writes 0 below the high tier
+    f(0.35); // 52 uNebula — gas; the app writes 0 below the high tier
     f(1.00); // 53 uBgDrift — slow looping orbit on some background stars
-    f(0.20); // 54 uGasSpread — how much of the sky the gas covers
-    f(0.50); // 55 uGasHue — teal/rose accent strength
+    f(0.40); // 54 uGasSpread — how much of the sky the gas covers
+    f(0.20); // 55 uGasHue — teal/rose accent strength
     f(0.4833); // 56 uCloudSpin — cloud texture vs arms; 0.5 = locked
     // 57-60 uGasRotA/B: the background gas rotates its two noise octaves in
     // opposite senses. Both angles are time-only, so the trig belongs here,
     // once a frame, not in the fragment shader 648k times.
-    const gasRateA = 0.055, gasRateB = -0.092;
-    final angA = driver.twinkleTime * gasRateA;
-    final angB = driver.twinkleTime * gasRateB;
+    // Half the original speed, directions reversed. The start phases are
+    // random per launch so the densest gas isn't always in the same corner.
+    const gasRateA = -0.0275, gasRateB = 0.046;
+    final angA = _gasPhaseA + driver.twinkleTime * gasRateA;
+    final angB = _gasPhaseB + driver.twinkleTime * gasRateB;
     f(math.cos(angA)); // 57
     f(math.sin(angA)); // 58
     f(math.cos(angB)); // 59
